@@ -1,6 +1,6 @@
-# 🧠 Expertaihub
+# 🧠 Expertaihub – AI-Synthesized Domain Experts on Demand
 
-> AI-Synthesized Immigration Expert on Demand – Localized, Reliable, and Document-Ready
+> One Platform. 500+ AI Advisors. Trained Like Real Experts.
 
 ![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Contributions Welcome](https://img.shields.io/badge/Contributions-Welcome-brightgreen)
@@ -9,24 +9,26 @@
 
 ---
 
-## 🚀 Overview
+## 🚀 What is Expertaihub?
 
-**Expertaihub** is an open-source platform that delivers ultra-specialized AI advisors built using Retrieval-Augmented Generation (RAG). Our MVP focuses on the **Immigration AI Advisor** — a smart assistant that can:
+**Expertaihub** is a powerful open-source platform for deploying ultra-specialized AI advisors trained on real-world expertise across domains.
 
-- Answer immigration questions tailored to your country & visa type
-- Generate legally structured documents (forms, affidavits, letters)
-- Provide simplified, explainable answers like a real consultant
-
-Our mission is to replace expensive and fragmented immigration help with fast, reliable, AI-powered support — available to everyone.
+Whether it's **Immigration, Legal, Finance, Parenting, Healthcare, or Startup Grants**, each advisor simulates the thinking patterns of a domain expert — delivering localized, trustworthy, and document-ready help.
 
 ---
 
-## 🌍 Use Cases
+## 🌍 Supported Niches (Examples from 500+)
 
-- “Draft a UK Tier 2 visa employer letter”
-- “What’s the Express Entry CRS cutoff this year?”
-- “Generate a U.S. affidavit of support under Form I-864”
-- “List the required documents for a spouse visa in Canada”
+- 🇺🇸 Immigration AI Advisor
+- 🏛️ Legal Advisor (Contract Drafting, Dispute Resolution)
+- 📈 Small Business Tax Advisor
+- 🇨🇦 Canadian Grant Writer AI
+- 🍼 Parenting & Childcare Consultant
+- 📚 Academic Research Mentor
+- 🏥 Health Insurance Planner
+- 🏡 Real Estate Legal Advisor
+
+Want to add your own? Just plug in your expert documents — and deploy.
 
 ---
 
@@ -36,24 +38,44 @@ Our mission is to replace expensive and fragmented immigration help with fast, r
 |------------|-------------------------------|
 | Frontend   | Next.js + shadcn/ui           |
 | Backend    | Django + FastAPI              |
-| Database   | PostgreSQL                    |
-| LLM Engine | GPT-4 + LangChain + FAISS     |
-| Auth       | Supabase (optional)           |
-| Hosting    | Vercel (frontend) + Render    |
+| Vector DB  | FAISS                         |
+| LLM Engine | GPT-4-turbo or Claude Opus    |
+| Document QA | LangChain + RAG              |
+| DB         | PostgreSQL                    |
 
 ---
 
-## 📦 Features
+## 📦 Core Features
 
-- 🧠 Expert Brain Templates (per domain/country)
-- 🌐 Geo-Aware Advice (localized policy knowledge)
-- 📄 Document Generator (editable, professional output)
-- 🤖 RAG-Powered Expert Chat (LangChain + FAISS)
-- 💬 Conversational UX (real advisor-like chat experience)
+- 🧠 **Expert Brain Templates** – Load new niches with ease
+- 🌐 **Geo-Aware Responses** – Custom logic by country/state
+- 📄 **Smart Document Generator** – Forms, Letters, Contracts
+- 🔍 **Explainable AI** – Clear reasoning for every answer
+- 💬 **Conversational UI** – Feels like chatting with a real expert
+- 🛠️ **Pluggable Niches** – Just drop in docs and prompts
 
 ---
 
-## 📁 Folder Structure
+## 💡 How It Works
 
+1. Add documents for your niche (PDF, text, URLs)
+2. Our system chunks, embeds, and indexes them
+3. Ask a question → get context-aware, expert-style responses
+4. Auto-generate legal-grade docs or workflows
+
+---
+
+## 🛠️ Local Setup
+
+```bash
+# Backend
+cd backend
+pip install -r requirements.txt
+python manage.py runserver
+
+# Frontend
+cd ../frontend
+npm install
+npm run dev
 
 
