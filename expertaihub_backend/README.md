@@ -65,17 +65,5 @@ Want to add your own? Just plug in your expert documents — and deploy.
 
 ---
 
-## 🛠️ Local Setup
-
-```bash
-# Backend
-cd backend
-pip install -r requirements.txt
-python manage.py runserver
-
-# Frontend
-cd ../frontend
-npm install
-npm run dev
 
 
