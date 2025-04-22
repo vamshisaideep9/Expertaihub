@@ -3,5 +3,15 @@ djangorestframework
 django-cors-headers
 openai
 langchain
+langchain-community
+langchain-text-splitters
+langchain-openai
+unstructured[all-docs]
+pdfminer.six
 faiss-cpu
+pyheif
 python-dotenv
+psycopg2-binary
+django-environ
+django-debug-toolbar
+django-extensions
