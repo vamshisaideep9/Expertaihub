@@ -5,7 +5,6 @@
 ![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Contributions Welcome](https://img.shields.io/badge/Contributions-Welcome-brightgreen)
 ![Built with Django](https://img.shields.io/badge/Backend-Django-informational)
-![Frontend NextJS](https://img.shields.io/badge/Frontend-Next.js-blue)
 
 ---
 
