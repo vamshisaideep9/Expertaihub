@@ -1,33 +1,36 @@
 import os
+import sys
+import django
+
+# Add root folder to sys.path manually
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+# Manually configure Django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'expertaihub_backend.settings')
+django.setup()
+
+# Now normal imports
 from langchain_community.document_loaders import DirectoryLoader, UnstructuredPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_huggingface import HuggingFaceEmbeddings
+from django.conf import settings
 from dotenv import load_dotenv
 load_dotenv()
-
-
-LANGSMITH_TRACKING = os.getenv("LANGSMITH_TRACKING")
-LANGSMITH_ENDPOINT = os.getenv("LANGSMITH_ENDPOINT")
-LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
-LANGSMITH_PROJECT_NAME = os.getenv("LANGSMITH_PROJECT_NAME")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-
-
+# --- Your BASE_DIR and other code ---
+BASE_DOCUMENTS_FOLDER = os.path.join(settings.BASE_DIR, "ai_core", "documents")
+BASE_VECTORSTORE_FOLDER = os.path.join(settings.BASE_DIR, "ai_core", "rag", "vectorstores")
 
 def load_and_embed_documents(niche: str, country_code: str):
     """
-    Load docs and build vectorstore for a specific niche + country.
+    Load documents, split them, create embeddings, and save FAISS vectorstore.
     """
     try:
         niche = niche.lower()
         country_code = country_code.lower()
 
-        docs_path = f"c:/Users/vamsh/OneDrive/Desktop/ExpertAiHub/Expertaihub/expertaihub_backend/ai_core/documents/{niche}_docs/{country_code}"
-        vector_path = f"c:/Users/vamsh/OneDrive/Desktop/ExpertAiHub/Expertaihub/expertaihub_backend/ai_core/rag/vectorstores/{niche}/{country_code}"
-
-        print(f"Looking for documents in: {docs_path}")  # Debug print
+        docs_path = os.path.join(BASE_DOCUMENTS_FOLDER, f"{niche}_docs", country_code)
+        vector_path = os.path.join(BASE_VECTORSTORE_FOLDER, niche, country_code)
 
         if not os.path.exists(docs_path):
             raise FileNotFoundError(f"No documents directory found at {docs_path}")
@@ -43,19 +46,18 @@ def load_and_embed_documents(niche: str, country_code: str):
         
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         split_docs = splitter.split_documents(raw_docs)
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-        embeddings = OpenAIEmbeddings()
         vectorstore = FAISS.from_documents(split_docs, embeddings)
 
         os.makedirs(vector_path, exist_ok=True)
         vectorstore.save_local(vector_path)
 
-        print(f"✅ {len(split_docs)} chunks embedded for {niche.upper()} - {country_code} at '{vector_path}'")
-    
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        raise
+        print(f"✅ {len(split_docs)} chunks embedded for {niche.upper()} - {country_code.upper()} at '{vector_path}'")
 
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        raise
 
 load_and_embed_documents("immigration", "usa")
 
