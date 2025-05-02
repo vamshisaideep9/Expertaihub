@@ -171,7 +171,7 @@ cython_debug/
 .ruff_cache/
 
 # PyPI configuration file
-.pypirc
+.pypirc 
 
 
-expertaihub_backend/ai_core/documents/immigration_docs/usa
+expertaihub_backend/ai_core/documents
