@@ -1,48 +1,45 @@
-# chats/chat/logger.py
+from chats.models import ChatSession, ChatMessage
 
-import secrets
-from django.utils.text import slugify
-from chats.models import ChatSession, ChatMessage, ChatLibrary
 
-def log_chat(user, advisor, country, question, answer, session_id=None):
+def log_chat(
+    user,
+    advisor=None,
+    country=None,
+    question: str = "",
+    answer: str = "",
+    session_id: str = None,
+):
     """
-    Create or update a chat session and log both user and AI messages.
-    Also save a summarized version in ChatLibrary and return the slug.
+    Logs one round of Q&A into ChatSession & ChatMessage.
+    - On first call (no session_id): creates a new ChatSession
+      (which will auto-generate its slug & session_id via model.save()).
+    - On subsequent calls: looks up the existing session by session_id.
+    Returns (slug, session_id)
     """
-    session = None
 
+    # 1) Lookup or create the ChatSession
     if session_id:
         session = ChatSession.objects.filter(session_id=session_id, user=user).first()
-
-    if not session:
+    else:
         session = ChatSession.objects.create(
             user=user,
             advisor=advisor,
             country=country,
-            title=question[:60],
+            title=question[:60],  # initial title from the first prompt
         )
 
-    # Save user & AI messages
-    ChatMessage.objects.create(session=session, sender="user", content=question)
-    ChatMessage.objects.create(session=session, sender="ai", content=answer)
-
-    # Build unique slug
-    base_slug = slugify(question)[:60]
-    unique_slug = f"{base_slug}-{secrets.token_hex(4)}"
-
-    # Save to ChatLibrary (or update)
-    entry, _ = ChatLibrary.objects.get_or_create(
-        user=user,
+    # 2) Persist the user’s question
+    ChatMessage.objects.create(
         session=session,
-        defaults={
-            "prompt": question,
-            "answer": answer,
-            "advisor": advisor,
-            "country": country,
-            "slug": unique_slug,
-        }
+        role="user",
+        content=question,
+    )
+    # 3) Persist the AI’s answer
+    ChatMessage.objects.create(
+        session=session,
+        role="ai",
+        content=answer,
     )
 
-    return entry.slug
-
-
+    # 4) Return the identifiers for the frontend
+    return session.slug, session.session_id

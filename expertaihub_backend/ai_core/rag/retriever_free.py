@@ -4,10 +4,10 @@ from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 
 BASE_VECTORSTORE_FOLDER = os.path.join(
-    settings.BASE_DIR, "ai_core", "rag", "vectorstores"
+    settings.BASE_DIR, "ai_core", "rag", "vectorstores", "free"
 )
 
-def get_retriever(niche: str, country_code: str, k: int = 4):
+def get_retriever(niche: str, country_code: str, k: int = 8):
     niche = niche.lower()
     country = country_code.lower()
     vector_path = os.path.join(BASE_VECTORSTORE_FOLDER, niche, country)

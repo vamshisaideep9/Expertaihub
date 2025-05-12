@@ -173,5 +173,4 @@ cython_debug/
 # PyPI configuration file
 .pypirc 
 
-
-expertaihub_backend/ai_core/documents
+expertaihub_backend/documents

@@ -25,7 +25,6 @@ export default function HomePage() {
     }
   }, [router]);
 
-  // Called when user presses Send or hits Enter
   async function handleAsk() {
     if (!question.trim()) return;
     setSending(true);
@@ -33,21 +32,17 @@ export default function HomePage() {
     try {
       const res = await api.post("/v1/immigration-ai/free/", {
         question,
-        chat_history: [],           // no prior history on home page
+        chat_history: [],           
         niche: "immigration",
         country: "usa",
       });
 
       const data = res.data;
-      // update quota display
       setQuota(data.quota);
-
-      // if slug returned, redirect to that chat page
       if (data.slug) {
-        router.push(`/library/${data.slug}`);
+        router.push(`library/${data.slug}`);
         return;
       }
-      // fallback: maybe show answer inline if no slug?
       alert("No slug returned from server. Answer:\n\n" + data.answer);
     } catch (err: any) {
       console.error(err);
@@ -103,8 +98,6 @@ export default function HomePage() {
               <Mic className="w-5 h-5" />
             </Button>
           </div>
-
-          {/* Quota Info */}
           <div className="mt-3">
             <p className="text-sm text-muted-foreground">
               🔢 {quota.used} / {quota.limit} free queries used this month

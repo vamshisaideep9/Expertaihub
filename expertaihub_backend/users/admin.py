@@ -2,8 +2,9 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import CustomUser
 from membership.models import Membership, MonthlyUsage
-from ai_core.models import Advisor, Country
-from chats.models import ChatLibrary, ChatMessage, ChatSession
+from ai_core.models import Advisor, Country, DocumentChunk, RawDocument
+from chats.models import ChatMessage, ChatSession
+
 
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
@@ -52,15 +53,39 @@ class CountryAdmin(admin.ModelAdmin):
 #Chats
 @admin.register(ChatSession)
 class ChatSessionAdmin(admin.ModelAdmin):
-    list_display = ('user', 'session_id', 'advisor', 'country', 'created_at', 'updated_at')
+    list_display = ('user', 'session_id', 'advisor', 'country', 'title', 'pinned', 'notes', 'archived', 'created_at', 'updated_at')
 
 @admin.register(ChatMessage)
 class ChatMessageAdmin(admin.ModelAdmin):
-    list_display = ('session', 'sender', 'content', 'timestamp')
-
-@admin.register(ChatLibrary)
-class ChatLibraryAdmin(admin.ModelAdmin):
-    list_display = ('user', 'prompt', 'slug', 'advisor', 'country', 'created_at')
+    list_display = ('session', 'role', 'content', 'created_at')
 
 
 
+
+
+class DocumentChunkInline(admin.TabularInline):
+    model = DocumentChunk
+    extra = 0
+    fields = ("chunk_index", "text")  # show whatever fields you care about
+    readonly_fields = ("chunk_index",)
+    show_change_link = True
+    ordering = ("chunk_index",)
+
+
+@admin.register(RawDocument)
+class RawDocumentAdmin(admin.ModelAdmin):
+    list_display = ("filename", "category", "created_at")
+    search_fields = ("filename", "category", "source_path")
+    list_filter = ("category",)
+    readonly_fields = ("created_at",)
+    inlines = (DocumentChunkInline,)
+    ordering = ("-created_at",)
+
+
+@admin.register(DocumentChunk)
+class DocumentChunkAdmin(admin.ModelAdmin):
+    list_display = ("__str__", "raw_document", "chunk_index")
+    search_fields = ("text", "metadata")
+    list_filter = ("raw_document__category",)
+    readonly_fields = ("created_at",)
+    ordering = ("raw_document", "chunk_index")

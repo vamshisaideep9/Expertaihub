@@ -1,22 +1,24 @@
+# expertaihub_backend/api/urls.py
+
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import (
-    ChatLibraryListView,
-    ChatLibraryDetailView,
-    ChatSessionViewSet,
-    ChatMessageListView,
-)
+
+from .views import ChatMessageListView
+from chats.views import ChatSessionViewSet
 
 router = DefaultRouter()
-router.register(r'library', ChatSessionViewSet, basename='chat-session')
+router.register(r'library', ChatSessionViewSet, basename='library')
 
 urlpatterns = [
-    path('library/list/',      ChatLibraryListView.as_view(),    name='chatlibrary-list'),
-    path('library/<slug:slug>/', ChatLibraryDetailView.as_view(), name='chatlibrary-detail'),
+    # 1) Free‐tier chat endpoint (APIView)
 
-    # ← CHANGE: use <str:session_id> so your random 32-char IDs match
-    path('messages/<str:session_id>/', ChatMessageListView.as_view(), name='chatmessage-list'),
+    # 2) Raw messages list endpoint (APIView)
+    path(
+        "messages/<str:session_id>/",
+        ChatMessageListView.as_view(),
+        name="chatmessage-list",
+    ),
 
-    path('', include(router.urls)),
+    # 3) All the /api/library/ endpoints come from the router
+    path("", include(router.urls)),
 ]
-

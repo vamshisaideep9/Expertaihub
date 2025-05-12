@@ -100,10 +100,10 @@ export default function LandingPage() {
               {section}
             </span>
           ))}
-          <Link href="/signin"><Button variant="outline">Signin</Button></Link>
-          <Link href="/signup"><Button>Signup</Button></Link>
-          <Button variant="ghost" size="icon" onClick={() => setIsDark(!isDark)}>
-            {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          <Link href="/signin"><Button variant="outline" className="cursor-pointer">Signin</Button></Link>
+          <Link href="/signup"><Button className="cursor-pointer">Signup</Button></Link>
+          <Button variant="ghost" className="cursor-pointer" size="icon" onClick={() => setIsDark(!isDark)}>
+            {isDark ? <Sun className="w-5 h-5 cursor-pointer" /> : <Moon className="w-5 h-5 cursor-pointer" />}
           </Button>
         </div>
       </nav>
