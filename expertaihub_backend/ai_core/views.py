@@ -1,5 +1,7 @@
 import os
 import json
+import re
+from pathlib import PurePath
 from rest_framework import generics
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from .models import Advisor, Country
@@ -10,6 +12,21 @@ from rest_framework import status
 from django.conf import settings
 
 BASE_DOCUMENTS_FOLDER = os.path.join(settings.BASE_DIR, "ai_core", "documents")
+
+# Allowed characters for path segments (alphanumeric, underscore and hyphen)
+_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _validate_segment(segment: str) -> str:
+    """Return a cleaned path segment or raise ValueError."""
+    if ".." in segment:
+        raise ValueError("Invalid path segment")
+    # PurePath will normalize any path separators
+    if PurePath(segment).name != segment:
+        raise ValueError("Invalid path segment")
+    if not _SEGMENT_RE.fullmatch(segment):
+        raise ValueError("Invalid path segment")
+    return segment
 
 class DocumentListAPIView(APIView):
     def get(self, request, niche, country):
@@ -39,20 +56,26 @@ class DocumentListAPIView(APIView):
 class DocumentDetailAPIView(APIView):
     def get(self, request, niche, country, form_number):
         try:
-            form_number = form_number.lower()
-            form_folder = os.path.join(BASE_DOCUMENTS_FOLDER, f"{niche}_docs", country.lower(), form_number)
+            try:
+                niche = _validate_segment(niche).lower()
+                country = _validate_segment(country).lower()
+                form_number = _validate_segment(form_number).lower()
+            except ValueError:
+                return Response({"error": "Invalid path."}, status=status.HTTP_400_BAD_REQUEST)
 
+            form_folder = os.path.join(BASE_DOCUMENTS_FOLDER, f"{niche}_docs", country, form_number)
             metadata_path = os.path.join(form_folder, "metadata.json")
-            pdf_files = [f for f in os.listdir(form_folder) if f.endswith('.pdf')]
 
             if not os.path.exists(metadata_path):
                 return Response({"error": "Form not found."}, status=status.HTTP_404_NOT_FOUND)
+
+            pdf_files = [f for f in os.listdir(form_folder) if f.endswith('.pdf')]
 
             with open(metadata_path, "r") as f:
                 metadata = json.load(f)
 
             if pdf_files:
-                metadata["download_url"] = f"/media/documents/{niche}_docs/{country.lower()}/{form_number}/{pdf_files[0]}"
+                metadata["download_url"] = f"/media/documents/{niche}_docs/{country}/{form_number}/{pdf_files[0]}"
             else:
                 metadata["download_url"] = None
 
