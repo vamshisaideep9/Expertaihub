@@ -1,2 +1,4 @@
 expertaihub_backend/ai_core/rag/vectorstores/free/immigration/usa/*.faiss filter=lfs diff=lfs merge=lfs -text
 expertaihub_backend/ai_core/rag/vectorstores/free/immigration/usa/*.pkl filter=lfs diff=lfs merge=lfs -text
+expertaihub_backend/ai_core/rag/vectorstores/free/immigration/usa/index.faiss filter=lfs diff=lfs merge=lfs -text
+expertaihub_backend/ai_core/rag/vectorstores/free/immigration/usa/index.pkl filter=lfs diff=lfs merge=lfs -text
