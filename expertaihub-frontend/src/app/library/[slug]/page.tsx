@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { FloatingMenu } from "@/components/FloatingMenu";
 import { FeedbackModal, FeedbackValues } from "@/components/FeedBackModel";
-import { useState, useEffect, useRef, FormEvent } from "react";
+import { useState, useEffect, useRef, FormEvent, useContext } from "react";
 import { useParams } from "next/navigation";
 import {
   Mic,
@@ -30,6 +30,7 @@ import {
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import ResponsiveSidebar from "@/components/ResponsiveSidebar";
 import api from "@/lib/apiprivate";
+import { UserContext } from "@/context/UserContext";
 
 const avatarColors = [
   "bg-red-500",
@@ -77,10 +78,7 @@ export default function ChatPage() {
 
 
   // Users & session metadata
-  const [currentUser, setCurrentUser] = useState<{ id: number; full_name: string }>({
-    id: 0,
-    full_name: "",
-  });
+  const { user: currentUser } = useContext(UserContext);
   const [owner, setOwner] = useState<{ id: number; full_name: string }>({
     id: 0,
     full_name: "",
@@ -207,13 +205,6 @@ export default function ChatPage() {
     return () => clearInterval(iv);
   }, [accessRequested, slug]);
 
-  // ——— Fetch current user ———
-  useEffect(() => {
-    api
-      .get<{ id: number; full_name: string }>("/users/me/")
-      .then(r => setCurrentUser(r.data))
-      .catch(console.error);
-  }, []);
 
   // ——— Fetch session metadata ———
   useEffect(() => {
@@ -455,7 +446,7 @@ export default function ChatPage() {
   }
 
   // ——— Delete session ———
-  const isOwner = owner.id === currentUser.id;
+  const isOwner = currentUser ? owner.id === currentUser.id : false;
   function openDeleteConfirm() {
     setMoreOpen(false);
     setConfirmDeleteOpen(true);
@@ -482,7 +473,7 @@ export default function ChatPage() {
 
   // ——— Choose display user ———
   const displayUser =
-    owner.id !== 0 && owner.id !== currentUser.id ? owner : currentUser;
+    owner.id !== 0 && currentUser && owner.id !== currentUser.id ? owner : (currentUser || owner);
 
   // ——— Placeholder exports ———
   async function exportAsPdf() {
@@ -665,7 +656,7 @@ export default function ChatPage() {
                   </div>
                   <span className="ml-2 text-base font-medium text-gray-900 dark:text-gray-100">
                     {displayUser.full_name}
-                    {owner.id && owner.id !== currentUser.id && (
+                    {owner.id && currentUser && owner.id !== currentUser.id && (
                       <span className="ml-1 text-sm text-gray-500">(owner)</span>
                     )}
                   </span>
@@ -689,7 +680,7 @@ export default function ChatPage() {
     <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700">
       <span className="text-sm text-gray-600 dark:text-gray-400">Created by</span>
       <span className="text-sm font-base text-gray-900 dark:text-gray-100 truncate">
-        {displayUser.full_name} ({owner.id === currentUser.id ? 'you' : 'owner'})
+        {displayUser.full_name} ({currentUser && owner.id === currentUser.id ? 'you' : 'owner'})
       </span>
     </div>
 
