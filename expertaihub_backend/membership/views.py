@@ -4,9 +4,9 @@ from rest_framework import status
 from rest_framework.views import APIView
 from .models import Membership, MonthlyUsage
 from rest_framework.response import Response
-from .serializers import MembershipSerializer, MonthlyUsageSerializer
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
-
+from .serializers import MembershipSerializer
+from rest_framework.permissions import IsAuthenticated
+from datetime import date
 
 
 class MembershipDetailView(APIView):
@@ -44,7 +44,7 @@ class MembershipListAPIView(APIView):
     """
     [Admin only] List all user memberships or create new ones.
     """
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         qs = Membership.objects.select_related("user").all()
@@ -61,10 +61,16 @@ class MembershipListAPIView(APIView):
 
 
 
-class MothlyUsageListApiView(APIView):
-    permission_classes = [IsAdminUser]
+class MonthlyUsageView(APIView):
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        qs = MonthlyUsage.objects.select_related("user").all()
-        serializer = MonthlyUsageSerializer(qs, many=True)
-        return Response(serializer.data)
+        first_of_month = date.today().replace(day=1)
+        usage, _ = MonthlyUsage.objects.get_or_create(
+            user=request.user,
+            period=first_of_month,
+            defaults={'count': 0}
+        )
+        return Response({'count': usage.count})
+
+

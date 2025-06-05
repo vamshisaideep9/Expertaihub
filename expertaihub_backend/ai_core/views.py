@@ -1,7 +1,7 @@
 import os
 import json
 from rest_framework import generics
-from rest_framework.permissions import IsAdminUser
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from .models import Advisor, Country
 from .serializers import AdvisorSerializer, CountrySerializer
 from rest_framework.views import APIView
@@ -67,9 +67,9 @@ class DocumentDetailAPIView(APIView):
 class AdvisorListCreateView(generics.ListCreateAPIView):
     queryset = Advisor.objects.all()
     serializer_class = AdvisorSerializer
-    permission_classes = [IsAdminUser]  
+    permission_classes = [IsAuthenticated]  
 
 class CountryListCreateView(generics.ListCreateAPIView):
-    queryset = Country.objects.all()
+    queryset = Country.objects.filter(is_active=True).prefetch_related("advisors")
     serializer_class = CountrySerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated]

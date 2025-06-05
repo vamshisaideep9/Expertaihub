@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "rehype-raw": "^7.0.0",
+    "remark-breaks": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.5"
+  }
+}

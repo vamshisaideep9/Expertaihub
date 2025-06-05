@@ -1,0 +1,12 @@
+Hi {{ owner.get_full_name }},
+
+{{ requester.get_full_name }} ({{ requester.email }})
+has requested access to your chat:
+
+  “{{ session.title }}”
+
+Approve with one click:
+{{ approval_url }}
+
+Thanks,
+The ExpertAIHub Team

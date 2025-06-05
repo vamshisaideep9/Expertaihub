@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin
 from .models import CustomUser
 from membership.models import Membership, MonthlyUsage
 from ai_core.models import Advisor, Country, DocumentChunk, RawDocument
-from chats.models import ChatMessage, ChatSession
+from chats.models import ChatMessage, ChatSession, Reaction, AccessRequest, MessageFeedback
 
 
 class CustomUserAdmin(UserAdmin):
@@ -36,8 +36,8 @@ class MembershipAdmin(admin.ModelAdmin):
 @admin.register(MonthlyUsage)
 class MonthlyUsageAdmin(admin.ModelAdmin):
     list_display = ('user', 'period', 'count')
-    list_filter = ('period', 'count')
-    search_fields = ('user__email',)
+
+
 
 
 #ai_core
@@ -53,11 +53,29 @@ class CountryAdmin(admin.ModelAdmin):
 #Chats
 @admin.register(ChatSession)
 class ChatSessionAdmin(admin.ModelAdmin):
-    list_display = ('user', 'session_id', 'advisor', 'country', 'title', 'pinned', 'notes', 'archived', 'created_at', 'updated_at')
+    list_display = ('user', 'session_id', 'advisor', 'country', 'title', 'pinned', 'notes', 'archived', 'created', 'updated', 'completed')
 
 @admin.register(ChatMessage)
 class ChatMessageAdmin(admin.ModelAdmin):
-    list_display = ('session', 'role', 'content', 'created_at')
+    list_display = ('session', 'role', 'content', 'timestamp')
+
+
+@admin.register(Reaction)
+class ReactionAdmin(admin.ModelAdmin):
+    list_display = ('user', 'message', 'reaction')
+
+
+
+@admin.register(MessageFeedback)
+class MessageFeedbackAdmin(admin.ModelAdmin):
+    list_display = ('user', 'message', 'reasons', 'additional_comments', 'created_at')
+
+
+@admin.register(AccessRequest)
+class AccessRequestAdmin(admin.ModelAdmin):
+    list_display = ("id", "session", "requester", "status", "created")
+    list_filter  = ("status", "created")
+    search_fields = ("session__title", "requester__email")
 
 
 

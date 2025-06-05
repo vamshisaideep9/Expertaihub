@@ -4,7 +4,6 @@ import django
 import logging
 from pathlib import Path
 
-# ─── Bootstrap Django ────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.abspath(os.path.join(__file__, "..", "..", ".."))
 sys.path.insert(0, PROJECT_ROOT)
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "expertaihub_backend.settings")
@@ -16,7 +15,6 @@ from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
-# ─── Logging Setup ───────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)-8s %(message)s",
@@ -24,7 +22,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ─── Vectorstore Path ────────────────────────────────────────────────────────
+
 BASE_VECTORSTORE_FOLDER = Path(settings.BASE_DIR) / "ai_core" / "rag" / "vectorstores" / "free"
 
 def build_vectorstore_from_db(niche: str, country: str, batch_size: int = 512):
@@ -76,8 +74,6 @@ def build_vectorstore_from_db(niche: str, country: str, batch_size: int = 512):
     vectorstore.save_local(str(out_dir))
     logger.info(f"✅ Done: embedded and indexed {len(docs)} chunks for {niche}/{country}")
 
-
-# ─── Entry Point ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("Usage: python build_vectorstore_from_db.py <niche> <country_code>")

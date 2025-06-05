@@ -1,0 +1,85 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* ─── Font Faces ───────────────────────────────────────── */
+    @font-face {
+      font-family: "Space Grotesk";
+      font-style: normal;
+      font-weight: 600;
+      src: local("Space Grotesk Semibold");
+    }
+
+    /* ─── Base Styles ─────────────────────────────────────── */
+    body {
+      margin: 2rem;
+      color: #1f1f1f;
+      font-family: "Cormorant", serif;
+    }
+
+    /* ─── Header (logo + title) ─────────────────────────── */
+    .logo-container,
+    .title-container {
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .logo-container img {
+      height: 40px;
+    }
+    .title-container {
+      /* now explicitly Grotesk semibold with smoothing */
+      font-family: "Space Grotesk", Arial, sans-serif;
+      font-weight: 600;
+      font-size: 2rem;
+      line-height: 1;
+      margin-left: 0.75rem;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ─── User Question Styling ──────────────────────────── */
+    .question {
+      font-size: 2rem;
+      margin: 2rem 0 1rem;
+      line-height: 1.3;
+    }
+    .question strong {
+      font-weight: 600;
+      margin-right: 0.5rem;
+    }
+
+    /* ─── Assistant Answer ───────────────────────────────── */
+    .assistant {
+      font-size: 1.5rem;
+      line-height: 1.6;
+      margin-bottom: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-container">
+      <img src="file:///C:/Users/vamsh/OneDrive/Desktop/ExpertAiHub/Expertaihub/expertaihub_backend/static/logo-dark.png"
+           alt="Expertaihub logo">
+    </div>
+    <div class="title-container">
+      Expertaihub
+    </div>
+  </div>
+
+  {% for m in messages %}
+    {% if m.role == "user" %}
+      <div class="question">
+        <strong>{{ m.number }}.</strong>{{ m.content }}
+      </div>
+    {% else %}
+      <div class="assistant">
+        {{ m.html_content|safe }}
+      </div>
+    {% endif %}
+  {% endfor %}
+</body>
+</html>
+

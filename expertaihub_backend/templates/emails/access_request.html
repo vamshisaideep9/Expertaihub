@@ -1,0 +1,14 @@
+<p>Hi {{ owner.get_full_name }},</p>
+<p>
+  <strong>{{ requester.get_full_name }}</strong> ({{ requester.email }})
+  has requested access to your chat:
+</p>
+<blockquote>{{ session.title }}</blockquote>
+<p>
+  <a href="{{ approval_url }}" style="display:inline-block;
+     padding:8px 12px;background:#1a73e8;color:white;
+     text-decoration:none;border-radius:4px;">
+    One-Click Approve Request
+  </a>
+</p>
+<p>Thanks,<br/>The ExpertAIHub Team</p>

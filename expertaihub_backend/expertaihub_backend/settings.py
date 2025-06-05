@@ -15,8 +15,11 @@ from datetime import timedelta
 load_dotenv()
 import os
 
-# Project root (where manage.py lives)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+# was maybe something like os.path.dirname(...), now use Path
+BASE_DIR = Path(__file__).resolve().parent.parent
+
 
 # Global store for all downloaded docs
 DOCS_DIR = os.path.join(BASE_DIR, "documents", "immigration", "usa")
@@ -29,6 +32,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-%r^q5lh+o8#f2a#k(t4m3l!di4
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', True)
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',')
+
 
 
 # Application definition
@@ -62,6 +66,7 @@ AUTH_USER_MODEL = 'users.CustomUser'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware', 
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -106,12 +111,50 @@ EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 
 
 
+# CORS Configuration
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "http://127.0.0.1:3000"
+    "http://localhost:3001",
+    "http://127.0.0.1:8000",
+    # Add your production frontend URL here when deploying
+    # "https://your-production-domain.com"
 ]
+
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = True 
+
+# Remove CORS_ALLOW_ALL_ORIGINS as it's too permissive
+
+# Additional CORS settings
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# Optional: Set CORS cookie settings
+CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']
+CORS_PREFLIGHT_MAX_AGE = 86400  # 24 hours
+
+# Optional: Set CORS cookie settings
+SESSION_COOKIE_SAMESITE = 'Lax'  # or 'None' if needed
+CSRF_COOKIE_SAMESITE = 'Lax'     # or 'None' if needed
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = False     # False because JavaScript needs to read it
 
 
 ROOT_URLCONF = 'expertaihub_backend.urls'
@@ -131,7 +174,14 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'expertaihub_backend.wsgi.application'
+
+
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+LOGIN_URL = f"{FRONTEND_URL.rstrip('/')}/signin/"
+
+#WSGI_APPLICATION = 'expertaihub_backend.wsgi.application'
+
+ASGI_APPLICATION = "expertaihub_backend.asgi.application"
 
 
 # Database
@@ -183,7 +233,16 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+
+
+STATICFILES_DIRS = [
+    BASE_DIR / "static",  # <— our project-level static folder
+]
+
+
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -197,3 +256,42 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "loggers": {
+        # Catch INFO+ from your memory & node modules
+        "ai_core.langgraph.nodes.nodes": {
+            "handlers": ["console"],
+            "level": "INFO",        # or "DEBUG" to see even more
+            "propagate": False,
+        },
+        "ai_core.langgraph.memory": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "chats": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+    # Optionally bump root to INFO so you see all your logger.info calls
+    "root": {
+        "handlers": ["console"],
+        "level": "WARNING",
+    },
+}
+
+
+APPEND_SLASH=False
+
+

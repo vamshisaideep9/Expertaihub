@@ -34,7 +34,7 @@ export default function LandingPage() {
       price: "$0 / mo",
       features: [
         "🔢 15 queries / month",
-        "📚 RAG Depth: 2 docs",
+        "📚 RAG Depth: 8 docs",
         "🧠 Session Memory: in-session only",
         "📝 Form Drafts: locked",
         "⚠️ Compliance: basic safety & intent",
@@ -48,27 +48,13 @@ export default function LandingPage() {
       price: "$19 / mo",
       features: [
         "🔢 Unlimited queries",
-        "📚 RAG Depth: 4 docs",
+        "📚 RAG Depth: 12 docs",
         "🧠 Session Memory: 7-day summary",
         "📝 Form Drafts: guide-style drafts",
         "⚠️ Compliance: + clarifying questions",
         "💬 Support: email (12 hr SLA)",
         "📊 Analytics: usage dashboard",
         "🛠️ Early Access: no",
-      ],
-    },
-    {
-      name: "Premium 🌟",
-      price: "$49 / mo",
-      features: [
-        "🔢 Unlimited queries",
-        "📚 RAG Depth: 8 docs",
-        "🧠 Session Memory: 30-day & profile",
-        "📝 Form Drafts: full pre-filled PDFs",
-        "⚠️ Compliance: custom legal rulesets",
-        "💬 Support: priority chat & phone (4 hr SLA)",
-        "📊 Analytics: advanced & CSV export",
-        "🛠️ Early Access: beta features",
       ],
     },
     {
@@ -85,7 +71,7 @@ export default function LandingPage() {
   ]
 
   return (
-    <div className="min-h-screen bg-background text-foreground scroll-smooth">
+    <div className="min-h-screen bg-[#fcfbf7] text-foreground scroll-smooth">
       <nav className="w-full flex items-center justify-between py-4 px-6 md:px-12 border-b border-muted">
         <Link href="/">
           <span className="text-xl font-bold cursor-pointer">Expertaihub</span>

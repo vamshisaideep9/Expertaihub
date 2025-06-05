@@ -1,123 +1,120 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import api from '@/lib/apipublic'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Eye, EyeOff, Lock, Mail } from 'lucide-react'
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import apipublic from "@/lib/apipublic";
+import apiprivate from "@/lib/apiprivate";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent } from "@/components/ui/card";
+import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 
 export default function LoginPage() {
-  const [form, setForm] = useState({ email: '', password: '' })
-  const [rememberMe, setRememberMe] = useState(false)
-  const [error, setError] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const router = useRouter()
+  const router       = useRouter();
+  const initialQ     = useSearchParams().get("question") || "";
+  const [form, setForm]         = useState({ email: "", password: "" });
+  const [rememberMe, setRem]    = useState(false);
+  const [error, setError]       = useState("");
+  const [showPassword, setShow] = useState(false);
+
+
+   // ← Clear out any old tokens on mount
+  useEffect(() => {
+    document.cookie = 'token=; path=/; max-age=0'
+    document.cookie = 'refresh_token=; path=/; max-age=0'
+  }, [])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value })
-    setError('')
-  }
+    setForm({ ...form, [e.target.name]: e.target.value });
+    setError("");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     try {
-      const res = await api.post('users/login/', form)
 
-      const accessToken = res.data.access;
-      const refreshToken = res.data.refresh;
+      document.cookie = 'token=; path=/; max-age=0'
+      document.cookie = 'refresh_token=; path=/; max-age=0'
+      // 1️⃣ Call public login endpoint
+      const res = await apipublic.post("users/login/", form);
+      const { access, refresh } = res.data;
 
-      // Save tokens in cookies
-      document.cookie = `token=${accessToken}; path=/; max-age=${rememberMe ? 604800 : 86400}; secure; samesite=strict`;
-      document.cookie = `refresh_token=${refreshToken}; path=/; max-age=${rememberMe ? 604800 : 86400}; secure; samesite=strict`;
+      // 2️⃣ Store both tokens in non-HttpOnly cookies
+      //    (so apiprivate can read `token`)
+      document.cookie = `token=${access}; path=/; max-age=${rememberMe ? 604800 : 86400}; secure; samesite=strict`;
+      document.cookie = `refresh_token=${refresh}; path=/; max-age=${rememberMe ? 604800 : 86400}; secure; samesite=strict`;
 
-      router.push('/home')
-
-    } catch (err: any) {
-      console.error(err);
-
-      if (err.response?.data?.error) {
-        setError(err.response.data.error); // Show backend error (user does not exist, wrong password, etc.)
-      } else {
-        setError('Something went wrong. Please try again.');
+      // 3️⃣ If the user came in with a question, create a chat
+      if (initialQ) {
+        const { data } = await apiprivate.post("immigration-ai/create-session/", {
+          question: initialQ,
+          niche:    "immigration",
+          country:  "usa",
+        });
+        return router.push(`/library/${data.slug}`);
       }
+
+      // 4️⃣ Otherwise go to home
+      router.push("/home");
+    } catch (err: any) {
+      setError(err.response?.data?.error || "Login failed. Please try again.");
     }
-  }
+  };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background text-foreground px-4">
-      <Card className="w-full max-w-md shadow-md">
+    <div className="min-h-screen flex items-center justify-center px-4">
+      <Card className="w-full max-w-md">
         <CardContent className="py-10">
           <h1 className="text-2xl font-bold mb-4 text-center">Login</h1>
-          <p className="text-muted-foreground text-center mb-6">
-            Welcome back to Expertaihub.
-          </p>
+          {initialQ && (
+            <p className="text-sm text-center mb-4 text-primary">
+              You asked: “{decodeURIComponent(initialQ)}”
+            </p>
+          )}
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18}/>
               <Input
-                type="email"
-                name="email"
-                placeholder="Email"
-                required
-                onChange={handleChange}
-                value={form.email}
-                className="focus:ring-2 focus:ring-primary pl-10"
+                type="email" name="email" placeholder="Email" required
+                value={form.email} onChange={handleChange}
+                className="pl-10"
               />
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
             </div>
-
             <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18}/>
               <Input
-                type={showPassword ? 'text' : 'password'}
-                name="password"
-                placeholder="Password"
-                required
-                onChange={handleChange}
-                value={form.password}
-                className="focus:ring-2 focus:ring-primary pr-10 pl-10"
+                type={showPassword?"text":"password"}
+                name="password" placeholder="Password" required
+                value={form.password} onChange={handleChange}
+                className="pr-10 pl-10"
               />
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
               <button
                 type="button"
-                onClick={() => setShowPassword((prev) => !prev)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2"
+                onClick={() => setShow((p) => !p)}
               >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                {showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
               </button>
             </div>
-
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox
                   checked={rememberMe}
-                  onCheckedChange={(checked) => setRememberMe(!!checked)}
+                  onCheckedChange={(c) => setRem(!!c)}
                 />
                 Remember me
               </label>
-              <a
-                href="/forgot-password"
-                className="text-sm text-primary underline hover:text-primary/90"
-              >
-                Forgot password?
-              </a>
+              <a href="/forgot-password" className="text-sm underline">Forgot password?</a>
             </div>
-
-            <Button type="submit" className="w-full cursor-pointer hover:bg-primary/90 focus:outline-none transition-all">
-              Login
-            </Button>
+            <Button type="submit" className="w-full">Login</Button>
           </form>
-
-          {error && (
-            <p className="text-sm text-center mt-4 text-red-500">{error}</p>
-          )}
-
-          <p className="text-sm text-center text-muted-foreground mt-6">
-            Don't have an account?{' '}
+          {error && <p className="mt-4 text-center text-red-500">{error}</p>}
+          <p className="mt-6 text-center text-sm">
+            Don’t have an account?{" "}
             <a
-              href="/signup"
-              className="text-primary underline hover:text-primary/90"
+              href={`/signup${initialQ ? `?question=${encodeURIComponent(initialQ)}` : ""}`}
+              className="underline text-primary"
             >
               Sign up here
             </a>
@@ -125,5 +122,5 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

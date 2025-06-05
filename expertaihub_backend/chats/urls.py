@@ -1,24 +1,54 @@
-# expertaihub_backend/api/urls.py
-
+# chats/urls.py
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from .views import (
+    ChatSessionCreateView,
+    ChatSessionStreamView,
+    ChatSessionViewSet,
+    ReactionUpsertView, access_request_approve, MessageFeedbackCreateView
+)
 
-from .views import ChatMessageListView
-from chats.views import ChatSessionViewSet
+app_name = "chats"
 
 router = DefaultRouter()
-router.register(r'library', ChatSessionViewSet, basename='library')
+# We register the viewset under the empty string so that when
+# we include it at "sessions/" it gives us exactly:
+#   GET    /api/sessions/
+#   GET    /api/sessions/{slug}/
+#   DELETE /api/sessions/{slug}/
+#   POST   /api/sessions/{slug}/pin/
+#   …etc.
+router.register(r"", ChatSessionViewSet, basename="sessions")
 
 urlpatterns = [
-    # 1) Free‐tier chat endpoint (APIView)
-
-    # 2) Raw messages list endpoint (APIView)
+    # 1) Custom creation & streaming endpoints first:
     path(
-        "messages/<str:session_id>/",
-        ChatMessageListView.as_view(),
-        name="chatmessage-list",
+        "sessions/create/",
+        ChatSessionCreateView.as_view(),
+        name="chat-session-create"
+    ),
+    path("sessions/<slug:slug>/stream",  ChatSessionStreamView.as_view(), name="chat-session-stream-noslash"),
+    path("sessions/<slug:slug>/stream/",  ChatSessionStreamView.as_view(), name="chat-session-stream"),
+    path("sessions/<slug:slug>/heartbeat", ChatSessionStreamView.as_view(), name="chat-session-heartbeat"),
+    
+    path(
+      "sessions/<slug:slug>/messages/<int:message_id>/react/",
+      ReactionUpsertView.as_view(),
+      name="message-react"
     ),
 
-    # 3) All the /api/library/ endpoints come from the router
-    path("", include(router.urls)),
+    path(
+        "access-request/approve/<uuid:token>/",
+        access_request_approve,
+        name="access_request_approve",
+    ),
+
+    path(
+      "sessions/<slug:slug>/messages/<int:msg_id>/feedback/",
+      MessageFeedbackCreateView.as_view(),
+      name="message-feedback-create",
+    ),
+
+    # 2) Then all the viewset‐generated routes under /sessions/:
+    path("sessions/", include(router.urls)),
 ]

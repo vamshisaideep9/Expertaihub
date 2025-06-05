@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Membership, MonthlyUsage
+from .models import Membership
 
 class MembershipSerializer(serializers.ModelSerializer):
     class Meta:
@@ -7,9 +7,3 @@ class MembershipSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['start_date']
 
-
-class MonthlyUsageSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = MonthlyUsage
-        fields = '__all__'
-        read_only_fields = ['start_date']

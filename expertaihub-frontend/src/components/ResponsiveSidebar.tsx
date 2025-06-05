@@ -31,6 +31,7 @@ const navItems = [
 ];
 
 const avatarColors = ["bg-red-500", "bg-green-500", "bg-blue-500", "bg-yellow-500", "bg-purple-500", "bg-pink-500", "bg-indigo-500"];
+
 function getAvatarColor(name: string) {
   const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return avatarColors[hash % avatarColors.length];
@@ -54,8 +55,13 @@ export default function ResponsiveSidebar() {
   const { theme } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
-  const [open, setOpen] = useState(true);
-  const [user, setUser] = useState<{ name: string } | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const [user, setUser] = useState<{
+        name: string;
+        membershipType: string;
+      } | null>(null);
+     
   const [profileOpen, setProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -82,9 +88,11 @@ export default function ResponsiveSidebar() {
   useEffect(() => {
     async function fetchUser() {
       try {
-        const res = await api.get("users/me/");
-        const userData = res.data;
-        setUser({ name: userData.full_name });
+        const { data } = await api.get("users/me/");
+        setUser({
+          name: data.full_name,
+          membershipType: data.membership.membership_type,
+        });
       } catch (err) {
         console.error("Error fetching user", err);
       }
@@ -92,9 +100,13 @@ export default function ResponsiveSidebar() {
     fetchUser();
   }, []);
 
+  const visibleNav = navItems.filter(item =>
+        !(item.href === "/documents" && user?.membershipType === "free")
+      );
+
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
-      <div className={`relative bg-white dark:bg-gray-800 shadow-md flex flex-col justify-between transition-all duration-300 ease-in-out ${open ? "w-56" : "w-22"}`}>
+    <div className="fixed top-0 left-0 flex h-screen transition-colors z-20">
+      <div className={`relative bg-[#f8f7f1] dark:bg-gray-800 shadow-md flex flex-col justify-between transition-all ease-in-out ${open ? "w-[183px]" : "w-[58px]"}`}>
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between h-20 px-3 pt-2">
             <div className="flex items-center gap-1">
@@ -104,7 +116,7 @@ export default function ResponsiveSidebar() {
   className={`object-contain transition-all duration-300 ${open ? "w-12 h-12" : "w-16 h-16"}`}
 />
               {open && (
-                <span className="text-xl font-semibold font-mono tracking-wide text-gray-900 dark:text-white transition-all">
+                <span className="text-xl font-basic font-serif tracking-wide text-gray-900 dark:text-white transition-all">
                   Expertaihub
                 </span>
               )}
@@ -114,7 +126,7 @@ export default function ResponsiveSidebar() {
                 onClick={() => setOpen(false)}
                 className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 p-1 rounded-full transition-all cursor-pointer ml-2"
               >
-                <ArrowLeftFromLine size={16} className="text-black dark:text-white" />
+                <ArrowLeftFromLine size={16} className="text-black dark:text-white"/>
               </button>
             )}
           </div>
@@ -122,17 +134,20 @@ export default function ResponsiveSidebar() {
           {!open && (
             <div className="flex justify-center py-2">
               <button
-                onClick={() => router.push("/chat/new")}
-                className="w-8.5 h-8.5 flex items-center justify-center rounded-full bg-white text-black dark:bg-black dark:text-white border border-gray-300 dark:border-gray-600 hover:scale-105 transition cursor-pointer"
+                onClick={() => router.push("/home")}
+                className="w-9 h-9 flex items-center justify-center rounded-full bg-[#fcfbf7] text-black dark:bg-black dark:text-white border border-gray-300 dark:border-gray-600 hover:scale-105 transition cursor-pointe hover:scale-105 
+    hover:border-blue-500 dark:hover:border-blue-500 
+    hover:text-blue-500 dark:hover:text-blue-500 
+    transition-colors transition-transformr"
                 title="New Chat"
                 aria-label="New Chat"
               >
-                <Plus className="w-5 h-5" />
+                <Plus className="w-5 h-5"/>
               </button>
             </div>
           )}
            <div className={`flex-1 ${open ? "items-start px-3" : "items-center"} flex flex-col pt-6 gap-3 transition-all duration-300`}>
-  {navItems.map(({ icon: Icon, label, href }) => {
+  {visibleNav.map(({ icon: Icon, label, href }) => {
     const isActive = pathname === href;
     return (
       <Link
@@ -178,12 +193,12 @@ export default function ResponsiveSidebar() {
                 {user.name.charAt(0).toUpperCase()}
               </div>
               {profileOpen && (
-                <div ref={dropdownRef} className="absolute bottom-12 left-8.5 transform -translate-x-0 w-50 bg-white dark:bg-gray-800 shadow-xl rounded-lg py-4 z-50">
+                <div ref={dropdownRef} className="absolute bottom-12 left-12 transform translate-x-0 w-[13rem] bg-[#fcfbf7] dark:bg-gray-800 shadow-xl rounded-lg py-4 z-50 overflow-hidden">
                   <div className="flex items-center gap-3 px-4 mb-3">
-                  <div className={`w-6 h-6 rounded-full ${getAvatarColor(user.name)} text-white flex items-center justify-center text-sm font-semibold cursor-pointer`}>
+                  <div className={`w-6 h-6 flex-shrink-0 rounded-full ${getAvatarColor(user.name)} text-white flex items-center justify-center text-xs font-semibold cursor-pointer`}>
                       {user.name.charAt(0).toUpperCase()}
                     </div>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white truncate">
+                    <p className="flex-1 text-lg font-base font-cormorant text-gray-900 dark:text-white truncate">
                       {user.name}
                     </p>
                   </div>
