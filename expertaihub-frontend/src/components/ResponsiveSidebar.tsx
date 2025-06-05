@@ -1,7 +1,7 @@
 "use client";
 import { useRef } from "react";
 import { useTheme } from "next-themes";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import {
   Home,
   FileText,
@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import api from "@/lib/apiprivate";
+import { UserContext } from "@/context/UserContext";
 import { Button } from '@/components/ui/button';
 
 
@@ -57,10 +57,7 @@ export default function ResponsiveSidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  const [user, setUser] = useState<{
-        name: string;
-        membershipType: string;
-      } | null>(null);
+  const { user, loading } = useContext(UserContext);
      
   const [profileOpen, setProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -85,24 +82,10 @@ export default function ResponsiveSidebar() {
   }, [profileOpen]);
   
 
-  useEffect(() => {
-    async function fetchUser() {
-      try {
-        const { data } = await api.get("users/me/");
-        setUser({
-          name: data.full_name,
-          membershipType: data.membership.membership_type,
-        });
-      } catch (err) {
-        console.error("Error fetching user", err);
-      }
-    }
-    fetchUser();
-  }, []);
 
-  const visibleNav = navItems.filter(item =>
-        !(item.href === "/documents" && user?.membershipType === "free")
-      );
+  const visibleNav = navItems.filter(
+    item => !(item.href === "/documents" && user?.membership.membership_type === "free")
+  );
 
   return (
     <div className="fixed top-0 left-0 flex h-screen transition-colors z-20">
@@ -184,22 +167,25 @@ export default function ResponsiveSidebar() {
             </button>
           )}
 
-          {user && !open &&(
+          {loading && !open && (
+            <div className="w-10 h-10 mx-auto rounded-full bg-gray-300 animate-pulse" />
+          )}
+          {user && !open && (
             <div className="relative w-full">
               <div
                 onClick={() => setProfileOpen(!profileOpen)}
-                className={`w-10 h-10 mx-auto cursor-pointer rounded-full flex items-center justify-center font-semibold text-white text-lg ${getAvatarColor(user.name)} hover:shadow-lg transition-all`}
+                className={`w-10 h-10 mx-auto cursor-pointer rounded-full flex items-center justify-center font-semibold text-white text-lg ${getAvatarColor(user.full_name)} hover:shadow-lg transition-all`}
               >
-                {user.name.charAt(0).toUpperCase()}
+                {user.full_name.charAt(0).toUpperCase()}
               </div>
               {profileOpen && (
                 <div ref={dropdownRef} className="absolute bottom-12 left-12 transform translate-x-0 w-[13rem] bg-[#fcfbf7] dark:bg-gray-800 shadow-xl rounded-lg py-4 z-50 overflow-hidden">
                   <div className="flex items-center gap-3 px-4 mb-3">
-                  <div className={`w-6 h-6 flex-shrink-0 rounded-full ${getAvatarColor(user.name)} text-white flex items-center justify-center text-xs font-semibold cursor-pointer`}>
-                      {user.name.charAt(0).toUpperCase()}
+                  <div className={`w-6 h-6 flex-shrink-0 rounded-full ${getAvatarColor(user.full_name)} text-white flex items-center justify-center text-xs font-semibold cursor-pointer`}>
+                      {user.full_name.charAt(0).toUpperCase()}
                     </div>
                     <p className="flex-1 text-lg font-base font-cormorant text-gray-900 dark:text-white truncate">
-                      {user.name}
+                      {user.full_name}
                     </p>
                   </div>
 
@@ -240,14 +226,20 @@ export default function ResponsiveSidebar() {
           
           )}
 
+          {open && loading && (
+            <div className="flex items-center justify-between w-full">
+              <div className="w-7 h-7 rounded-full bg-gray-300 animate-pulse" />
+              <div className="flex-1 ml-2 h-4 bg-gray-300 rounded animate-pulse" />
+            </div>
+          )}
           {open && user && (
             <div className="flex items-center justify-between w-full">
-              <div className={`w-7 h-7 cursor-pointer rounded-full flex items-center justify-center font-semibold text-white text-sm ${getAvatarColor(user.name)} hover:shadow-lg transition-all`}>
-                {user.name.charAt(0).toUpperCase()}
+              <div className={`w-7 h-7 cursor-pointer rounded-full flex items-center justify-center font-semibold text-white text-sm ${getAvatarColor(user.full_name)} hover:shadow-lg transition-all`}>
+                {user.full_name.charAt(0).toUpperCase()}
               </div>
               <div className="flex items-center justify-between flex-1 ml-2">
                 <span className="text-sm font-medium text-gray-900 dark:text-white truncate max-w-[100px] transition-all duration-300">
-                  {user.name}
+                  {user.full_name}
                 </span>
                 <Link href="/settings">
                   <button className="bg-gray-100 hover:scale-110 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-full p-2 transition-all cursor-pointer">
