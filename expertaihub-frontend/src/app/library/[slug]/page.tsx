@@ -112,7 +112,8 @@ export default function ChatPage() {
 
   // UI state
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const dropdownButtonRef = useRef<HTMLDivElement>(null);
+  const dropdownMenuRef = useRef<HTMLDivElement>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -152,7 +153,11 @@ export default function ChatPage() {
   // ——— Close native pop-overs on outside click ———
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (dropdownOpen && !dropdownRef.current?.contains(e.target as Node)) {
+      if (
+        dropdownOpen &&
+        !dropdownButtonRef.current?.contains(e.target as Node) &&
+        !dropdownMenuRef.current?.contains(e.target as Node)
+      ) {
         setDropdownOpen(false);
       }
       if (moreOpen && !moreRef.current?.contains(e.target as Node)) {
@@ -656,7 +661,7 @@ export default function ChatPage() {
             <div className="px-6 py-4 flex items-center justify-between">
 
               {/* Profile dropdown */}
-              <div ref={dropdownRef} className="relative inline-block">
+              <div ref={dropdownButtonRef} className="relative inline-block">
                 <div
                   className="flex items-center cursor-pointer px-2 py-1"
                   onClick={() => setDropdownOpen(o => !o)}
@@ -678,7 +683,7 @@ export default function ChatPage() {
                 </div>
                 {dropdownOpen && (
   <div
-    ref={dropdownRef}
+    ref={dropdownMenuRef}
     className="
        absolute top-full left-0
        mt-2
