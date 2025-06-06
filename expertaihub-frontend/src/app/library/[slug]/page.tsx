@@ -354,13 +354,15 @@ export default function ChatPage() {
 
     try {
       const token = document.cookie.match(/(?:^|; )token=([^;]+)/)?.[1];
-      const res = await fetch(`/api/sessions/${slug}/stream/`, {
+      const base = process.env.NEXT_PUBLIC_API_BASE || "";
+      const res = await fetch(`${base}/sessions/${slug}/stream/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(token && { Authorization: `Bearer ${token}` }),
         },
         body: JSON.stringify({ question: text }),
+        credentials: "include",
         signal: ctrl.signal,
       });
       if (!res.ok) {
