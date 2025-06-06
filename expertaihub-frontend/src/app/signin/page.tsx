@@ -45,7 +45,13 @@ export default function LoginPage() {
       document.cookie = `token=${access}; path=/; max-age=${rememberMe ? 604800 : 86400}; secure; samesite=strict`;
       document.cookie = `refresh_token=${refresh}; path=/; max-age=${rememberMe ? 604800 : 86400}; secure; samesite=strict`;
 
-      // 3️⃣ If the user came in with a question, create a chat
+      // 3️⃣ Fetch current user and stash in localStorage
+      const { data: user } = await apiprivate.get("/users/me/");
+      if (typeof window !== "undefined") {
+        localStorage.setItem("user", JSON.stringify(user));
+      }
+
+      // 4️⃣ If the user came in with a question, create a chat
       if (initialQ) {
         const { data } = await apiprivate.post("immigration-ai/create-session/", {
           question: initialQ,
@@ -55,7 +61,7 @@ export default function LoginPage() {
         return router.push(`/library/${data.slug}`);
       }
 
-      // 4️⃣ Otherwise go to home
+      // 5️⃣ Otherwise go to home
       router.push("/home");
     } catch (err: any) {
       setError(err.response?.data?.error || "Login failed. Please try again.");
