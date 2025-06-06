@@ -66,9 +66,9 @@ export default function HomePage() {
       );
       setPendingSlug(slug);  // ← remember it
 
-      // 2️⃣ fire off stream
+      // 2️⃣ run generation synchronously (non-streaming)
       await apiPrivate.post(
-        `/sessions/${slug}/stream/`,
+        `/sessions/${slug}/run/`,
         { question: q },
         { signal: ctrl.signal }
       );
