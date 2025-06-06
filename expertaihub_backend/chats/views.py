@@ -4,8 +4,7 @@ import uuid, logging
 from datetime import date
 from django.utils.text import slugify
 from django.utils import timezone
-from rest_framework import status, permissions
-from rest_framework import viewsets, mixins, decorators, response, status, permissions
+from rest_framework import status, permissions, viewsets, mixins, decorators, response
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -18,12 +17,11 @@ from membership.models import MonthlyUsage
 from rest_framework.decorators import action
 from ai_core.langgraph.workflows.workflow_free import get_free_immigration_graph
 from ai_core.llm.llm_client_free import ask_openai
-# chats/views.py
+
 
 from django.core.mail import EmailMultiAlternatives
 from django.urls import reverse
 from django.http import FileResponse
-
 from .utils.markdown_renderer import render_markdown_to_html
 from django.template.loader import render_to_string
 import pdfkit
@@ -31,7 +29,6 @@ from io import BytesIO
 from docx import Document as DocxDocument
 from bs4 import BeautifulSoup
 from docx.shared import Pt, Inches
-from django.http import FileResponse
 
 
 from django.contrib.staticfiles import finders
