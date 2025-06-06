@@ -122,7 +122,7 @@ class ChatSessionStreamView(APIView):
         data = session.memory_data or []
         data.append({"role": role, "content": content})
         session.memory_data = data
-        session.save(update_fields=["memory_data"])
+        session.save(update_fields=["memory_data", "updated"])
         logger.debug(f"[Memory] appended {role} turn to session={session.slug}")
 
     def head(self, request, slug, *args, **kwargs):
@@ -188,7 +188,7 @@ class ChatSessionStreamView(APIView):
 
                     session.completed = True
                     session.updated = timezone.now()
-                    session.save(update_fields=["completed"])
+                    session.save(update_fields=["completed", "updated"])
                     logger.info(f"[StreamView] Completed answer ({len(full_response)} chars)")
 
                     # Only increment usage if we actually streamed tokens from OpenAI (not fallback)
@@ -209,7 +209,7 @@ class ChatSessionStreamView(APIView):
 
                     session.completed = True
                     session.updated = timezone.now()
-                    session.save(update_fields=["completed"])
+                    session.save(update_fields=["completed", "updated"])
                     logger.info(f"[StreamView] Completed static ({len(answer_markdown)} chars)")
 
             except Exception as e:
@@ -349,7 +349,7 @@ class ChatSessionViewSet(
             )
 
         session.share_option = opt
-        session.save(update_fields=["share_option"])
+        session.save(update_fields=["share_option", "updated"])
         return response.Response({"share_option": session.share_option})
 
     @decorators.action(
@@ -379,28 +379,28 @@ class ChatSessionViewSet(
     def pin(self, request, slug=None):
         session = self.get_object()
         session.pinned = True
-        session.save(update_fields=["pinned"])
+        session.save(update_fields=["pinned", "updated"])
         return response.Response({"pinned": True})
 
     @decorators.action(detail=True, methods=["post"])
     def unpin(self, request, slug=None):
         session = self.get_object()
         session.pinned = False
-        session.save(update_fields=["pinned"])
+        session.save(update_fields=["pinned", "updated"])
         return response.Response({"pinned": False})
 
     @decorators.action(detail=True, methods=["post"])
     def archive(self, request, slug=None):
         session = self.get_object()
         session.archived = True
-        session.save(update_fields=["archived"])
+        session.save(update_fields=["archived", "updated"])
         return response.Response({"archived": True})
 
     @decorators.action(detail=True, methods=["post"])
     def unarchive(self, request, slug=None):
         session = self.get_object()
         session.archived = False
-        session.save(update_fields=["archived"])
+        session.save(update_fields=["archived", "updated"])
         return response.Response({"archived": False})
 
     @decorators.action(detail=True, methods=["get"])
