@@ -1,16 +1,20 @@
-import axios from 'axios';
+// src/lib/apiprivate.ts
+import axios from "axios";
 
 const apiprivate = axios.create({
-  baseURL: '/api/',
-  withCredentials: true,
-  headers: { 'Content-Type': 'application/json' }
+  baseURL: process.env.NEXT_PUBLIC_API_BASE,
+  withCredentials: true,         // send your JWT cookie automatically
+  headers: { "Content-Type": "application/json" },
 });
 
-// Attach access token from cookie as Authorization header
-apiprivate.interceptors.request.use(config => {
-  if (typeof document !== 'undefined') {
-    const token = document.cookie.match(/(?:^|; )token=([^;]+)/)?.[1];
-    if (token) config.headers.Authorization = `Bearer ${token}`;
+// on every request, read the `token` cookie and add an Authorization header
+apiprivate.interceptors.request.use((config) => {
+  if (typeof document !== "undefined") {
+    const match = document.cookie.match(/(?:^|; )token=([^;]+)/);
+    const token = match?.[1];
+    if (token) {
+      config.headers!["Authorization"] = `Bearer ${token}`;
+    }
   }
   return config;
 });

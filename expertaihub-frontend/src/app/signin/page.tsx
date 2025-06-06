@@ -36,8 +36,14 @@ export default function LoginPage() {
 
       document.cookie = 'token=; path=/; max-age=0'
       document.cookie = 'refresh_token=; path=/; max-age=0'
-      // 1️⃣ Call Next.js login route which sets HttpOnly cookies
-      await apipublic.post("login", { ...form, rememberMe });
+      // 1️⃣ Call public login endpoint
+      const res = await apipublic.post("users/login/", form);
+      const { access, refresh } = res.data;
+
+      // 2️⃣ Store both tokens in non-HttpOnly cookies
+      //    (so apiprivate can read `token`)
+      document.cookie = `token=${access}; path=/; max-age=${rememberMe ? 604800 : 86400}; secure; samesite=strict`;
+      document.cookie = `refresh_token=${refresh}; path=/; max-age=${rememberMe ? 604800 : 86400}; secure; samesite=strict`;
 
       // 3️⃣ If the user came in with a question, create a chat
       if (initialQ) {
@@ -118,4 +124,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

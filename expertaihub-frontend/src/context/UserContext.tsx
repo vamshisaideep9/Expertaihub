@@ -42,7 +42,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     async function fetchUser() {
       try {
-        const { data } = await api.get<User>("users/me/");
+        const { data } = await api.get<User>("/users/me/");
         setUser(data);
         if (typeof window !== "undefined") {
           localStorage.setItem("user", JSON.stringify(data));

@@ -30,7 +30,7 @@ export default function HomePage() {
   const outOfQuota = usage.used >= usage.limit;
 
   useEffect(() => {
-    apiPrivate.get<{ name: string }>("/advisor/")
+    apiPrivate.get<{ name: string }>("/advisor/") 
       .then(r => setAdvisor(r.data.name))
       .catch(() => setAdvisor("immigration"));
     apiPrivate.get<{ name: string }>("/country/")
