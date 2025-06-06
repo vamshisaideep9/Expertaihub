@@ -85,7 +85,8 @@ export default function ChatPage() {
 
 
   // Users & session metadata
-  const { user: currentUser } = useContext(UserContext);
+  const { user: currentUser, loading: userLoading } = useContext(UserContext);
+  if (userLoading) return null;
   const [owner, setOwner] = useState<{ id: number; full_name: string }>(
     () =>
       currentUser
