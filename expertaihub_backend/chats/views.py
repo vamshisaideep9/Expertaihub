@@ -225,6 +225,62 @@ class ChatSessionStreamView(APIView):
 
         return StreamingHttpResponse(stream_response(), content_type="text/plain; charset=utf-8")
 
+class ChatSessionRunView(ChatSessionStreamView):
+    """Synchronous endpoint that runs generation without streaming"""
+
+    def post(self, request, slug, *args, **kwargs):
+        session = get_object_or_404(ChatSession, slug=slug, user=request.user)
+        question = request.data.get("question", "").strip()
+        if not question:
+            return Response({"error": "Question required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        ChatMessage.objects.create(session=session, role="user", content=question)
+        logger.info(f"[RunView] Stored user message for session={slug}: {question!r}")
+        self._append_memory(session, "user", question)
+
+        try:
+            result = graph.invoke({
+                "session_id": session.session_id,
+                "question": question,
+                "niche": getattr(session, "niche", "immigration"),
+                "country": str(getattr(session, "country", "usa")).lower(),
+                "used_retrieval": False,
+            })
+            answer_markdown = result.get("answer", "").strip()
+            docs = result.get("docs") or []
+
+            if docs and answer_markdown:
+                full_response = ask_openai(answer_markdown, stream=False)
+                self._record_usage(request.user)
+            else:
+                full_response = answer_markdown
+
+            ChatMessage.objects.create(
+                session=session,
+                role="assistant",
+                content=full_response,
+                html_content=render_markdown_to_html(full_response),
+            )
+            self._append_memory(session, "assistant", full_response)
+
+            session.completed = True
+            session.updated = timezone.now()
+            session.save(update_fields=["completed", "updated"])
+            logger.info(f"[RunView] Completed answer ({len(full_response)} chars)")
+
+        except Exception as e:
+            logger.exception(f"[RunView] Error processing request: {e}")
+            error_msg = "I apologize, but I encountered an error while processing your request. Please try again."
+            ChatMessage.objects.create(
+                session=session,
+                role="assistant",
+                content=error_msg,
+                html_content=render_markdown_to_html(error_msg),
+            )
+            self._append_memory(session, "assistant", error_msg)
+
+        return Response({"detail": "completed"}, status=status.HTTP_200_OK)
+
 class ChatSessionViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,

@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     ChatSessionCreateView,
     ChatSessionStreamView,
+    ChatSessionRunView,
     ChatSessionViewSet,
     ReactionUpsertView, access_request_approve, MessageFeedbackCreateView
 )
@@ -30,6 +31,7 @@ urlpatterns = [
     path("sessions/<slug:slug>/stream",  ChatSessionStreamView.as_view(), name="chat-session-stream-noslash"),
     path("sessions/<slug:slug>/stream/",  ChatSessionStreamView.as_view(), name="chat-session-stream"),
     path("sessions/<slug:slug>/heartbeat", ChatSessionStreamView.as_view(), name="chat-session-heartbeat"),
+    path("sessions/<slug:slug>/run/", ChatSessionRunView.as_view(), name="chat-session-run"),
     
     path(
       "sessions/<slug:slug>/messages/<int:message_id>/react/",
