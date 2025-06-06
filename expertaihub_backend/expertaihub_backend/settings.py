@@ -92,7 +92,7 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     # Reduce access token lifetime to a reasonable duration
     # so tokens expire within a short window
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=3000),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=10),
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
