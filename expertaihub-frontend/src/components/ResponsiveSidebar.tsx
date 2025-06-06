@@ -84,7 +84,11 @@ export default function ResponsiveSidebar() {
 
 
   const visibleNav = navItems.filter(
-    item => !(item.href === "/documents" && user?.membership.membership_type === "free")
+    item =>
+      !(
+        item.href === "/documents" &&
+        (loading || user?.membership.membership_type === "free")
+      )
   );
 
   return (
