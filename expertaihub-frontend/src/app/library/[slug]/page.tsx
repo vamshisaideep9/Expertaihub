@@ -3,7 +3,14 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { FloatingMenu } from "@/components/FloatingMenu";
 import { FeedbackModal, FeedbackValues } from "@/components/FeedBackModel";
-import { useState, useEffect, useRef, FormEvent, useContext } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  FormEvent,
+  useContext,
+  useMemo,
+} from "react";
 import { useParams } from "next/navigation";
 import {
   Mic,
@@ -79,10 +86,12 @@ export default function ChatPage() {
 
   // Users & session metadata
   const { user: currentUser } = useContext(UserContext);
-  const [owner, setOwner] = useState<{ id: number; full_name: string }>({
-    id: 0,
-    full_name: "",
-  });
+  const [owner, setOwner] = useState<{ id: number; full_name: string }>(
+    () =>
+      currentUser
+        ? { id: currentUser.id, full_name: currentUser.full_name }
+        : { id: 0, full_name: "" }
+  );
   const [updatedAt, setUpdatedAt] = useState<string>("");
   const [countryName, setCountryName] = useState("");
   const [advisorName, setAdvisorName] = useState("");
@@ -472,8 +481,13 @@ export default function ChatPage() {
   }
 
   // ——— Choose display user ———
-  const displayUser =
-    owner.id !== 0 && currentUser && owner.id !== currentUser.id ? owner : (currentUser || owner);
+  const displayUser = useMemo(
+    () =>
+      owner.id !== 0 && currentUser && owner.id !== currentUser.id
+        ? owner
+        : currentUser || owner,
+    [owner, currentUser]
+  );
 
   // ——— Placeholder exports ———
   async function exportAsPdf() {
