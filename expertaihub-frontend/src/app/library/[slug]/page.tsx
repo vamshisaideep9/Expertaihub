@@ -648,7 +648,7 @@ export default function ChatPage() {
                   onClick={() => setDropdownOpen(o => !o)}
                 >
                   <div
-                    className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs${getAvatarColor(
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs ${getAvatarColor(
                       displayUser.full_name
                     )}`}
                   >
