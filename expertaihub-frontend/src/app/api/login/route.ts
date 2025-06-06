@@ -18,14 +18,14 @@ export async function POST(req: Request) {
     const maxAge = rememberMe ? 7 * 24 * 60 * 60 : 24 * 60 * 60;
     const res = NextResponse.json({ success: true });
     res.cookies.set('token', data.access, {
-      httpOnly: true,
+      httpOnly: false,
       secure: true,
       sameSite: 'strict',
       maxAge,
       path: '/'
     });
     res.cookies.set('refresh_token', data.refresh, {
-      httpOnly: true,
+      httpOnly: false,
       secure: true,
       sameSite: 'strict',
       maxAge,
