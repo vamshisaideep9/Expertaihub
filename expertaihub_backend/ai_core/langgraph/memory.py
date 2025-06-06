@@ -1,6 +1,7 @@
 import logging
 from langchain.memory.buffer import ConversationBufferMemory
-from chats.models import ChatMessage
+from langchain_core.messages import HumanMessage
+from chats.models import ChatMessage, ChatSession
 
 logger = logging.getLogger(__name__)
 
@@ -23,5 +24,13 @@ class MemoryStore:
 
     @staticmethod
     def save_for(session_id: str, mem: ConversationBufferMemory):
-        total = len(mem.chat_memory.messages)
-        logger.info(f"[MemoryStore] Memory for session_id={session_id} now holds {total} turns")
+        messages = []
+        for m in mem.chat_memory.messages:
+            role = "user" if isinstance(m, HumanMessage) else "assistant"
+            messages.append({"role": role, "content": m.content})
+
+        ChatSession.objects.filter(session_id=session_id).update(memory_data=messages)
+        total = len(messages)
+        logger.info(
+            f"[MemoryStore] Memory for session_id={session_id} now holds {total} turns"
+        )
