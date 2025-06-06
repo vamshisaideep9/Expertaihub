@@ -15,18 +15,19 @@ export async function POST(req: Request) {
       return NextResponse.json(data, { status: backendRes.status });
     }
 
+    const isProd = process.env.NODE_ENV === 'production';
     const maxAge = rememberMe ? 7 * 24 * 60 * 60 : 24 * 60 * 60;
     const res = NextResponse.json({ success: true });
     res.cookies.set('token', data.access, {
-      httpOnly: true,
-      secure: true,
+      httpOnly: false,
+      secure: isProd,
       sameSite: 'strict',
       maxAge,
       path: '/'
     });
     res.cookies.set('refresh_token', data.refresh, {
-      httpOnly: true,
-      secure: true,
+      httpOnly: false,
+      secure: isProd,
       sameSite: 'strict',
       maxAge,
       path: '/'
