@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'django_filters',
     "django_celery_beat",
     "django_celery_results",
+    "channels",
     
     #custom apps
     'users',
@@ -290,6 +291,17 @@ LOGGING = {
     "root": {
         "handlers": ["console"],
         "level": "WARNING",
+    },
+}
+
+
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
     },
 }
 

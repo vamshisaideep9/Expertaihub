@@ -1,5 +1,9 @@
+# expertaihub_backend/asgi.py
+
 import os
-from django.core.asgi import get_asgi_application
+from channels.routing import get_default_application
+import django
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "expertaihub_backend.settings")
-application = get_asgi_application()
+django.setup()
+application = get_default_application()

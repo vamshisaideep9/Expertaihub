@@ -98,6 +98,9 @@ class ChatSessionCreateView(APIView):
             status=status.HTTP_201_CREATED
         )
 
+
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 class ChatSessionStreamView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -113,7 +116,21 @@ class ChatSessionStreamView(APIView):
     def _record_usage(self, user):
         usage = self._get_this_month_usage(user)
         usage.increment()
+        usage.save()  # make sure to persist the new count
+
+        # 1) Log locally
         logger.info(f"[Usage] {user.email} ⇒ {usage.count} in {usage.period}")
+
+        # 2) Broadcast to WebSocket group “usage_{user.id}”
+        channel_layer = get_channel_layer()
+        group_name = f"usage_{user.id}"
+        async_to_sync(channel_layer.group_send)(
+            group_name,
+            {
+                "type": "usage.update",        # must match `usage_update` handler in consumer
+                "count": usage.count,
+            }
+        )
 
     def _append_memory(self, session, role, content):
         data = session.memory_data or []
