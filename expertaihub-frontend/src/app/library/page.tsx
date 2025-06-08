@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import ResponsiveSidebar from "@/components/ResponsiveSidebar";
-import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import{ MarkdownRenderer}from "@/components/MarkdownRenderer";
 import apiPrivate from "@/lib/apiprivate";
 
 // Helpers

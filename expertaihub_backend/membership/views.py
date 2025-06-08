@@ -58,19 +58,18 @@ class MembershipListAPIView(APIView):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     
-
+from django.conf import settings
 
 
 class MonthlyUsageView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        first_of_month = date.today().replace(day=1)
-        usage, _ = MonthlyUsage.objects.get_or_create(
+    def get(self, request, *args, **kwargs):
+        first_day = date.today().replace(day=1)
+        usage, _   = MonthlyUsage.objects.get_or_create(
             user=request.user,
-            period=first_of_month,
-            defaults={'count': 0}
+            period=first_day,
+            defaults={"count": 0},
         )
-        return Response({'count': usage.count})
-
+        return Response({"count": usage.count, "limit": settings.MONTHLY_USAGE_LIMIT})
 

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Send, Mic, Search, ArrowUpLeft, Star, StopCircle } from "lucide-react";
 import apiPrivate from "@/lib/apiprivate";
 import ResponsiveSidebar from "@/components/ResponsiveSidebar";
+import { useMonthlyUsage } from "@/hooks/useMonthlyUsage";
 
 const DEFAULT_SUGGESTIONS = [
   "What documents are required to file Form AR-11?",
@@ -30,16 +31,24 @@ export default function HomePage() {
   const outOfQuota = usage.used >= usage.limit;
 
   useEffect(() => {
-    apiPrivate.get<{ name: string }>("/advisor/") 
-      .then(r => setAdvisor(r.data.name))
-      .catch(() => setAdvisor("immigration"));
-    apiPrivate.get<{ name: string }>("/country/")
-      .then(r => setCountry(r.data.name))
-      .catch(() => setCountry("USA"));
-    apiPrivate.get<{ count: number }>("/monthly-usage/")
-      .then(r => setUsage(us => ({ ...us, used: r.data.count })))
-      .catch(() => {});
-  }, []);
+        apiPrivate.get<{ name: string }>("/advisor/")
+          .then((r) => setAdvisor(r.data.name))
+          .catch(() => setAdvisor("immigration"));
+        apiPrivate.get<{ name: string }>("/country/")
+          .then((r) => setCountry(r.data.name))
+          .catch(() => setCountry("USA"));
+      }, []);
+    
+      /*  realtime usage ---------------------------------------------- */
+      const [currentUser, setCurrentUser] = useState<{ id: number }>({ id: 0 });
+      useEffect(() => {
+       apiPrivate.get<{ id: number }>("/users/me/")
+          .then((r) => setCurrentUser(r.data))
+          .catch(console.error);
+      }, []);
+    
+      const realtime = useMonthlyUsage(currentUser.id);  //  ← hook
+      useEffect(() => setUsage(realtime), [realtime]);
 
   // abort on unmount
   useEffect(() => () => controllerRef.current?.abort(), []);

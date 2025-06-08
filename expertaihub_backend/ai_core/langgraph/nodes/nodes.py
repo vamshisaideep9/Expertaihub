@@ -8,7 +8,7 @@ from ai_core.rag.retriever_free import get_retriever
 from ai_core.prompts.prompts import (
     rephrase_prompt,
     intent_prompt,
-    generate_response_prompt_free,
+    generate_response_prompt,
     safety_prompt,
 )
 from ai_core.langgraph.memory import MemoryStore
@@ -139,7 +139,7 @@ def retrieve_context(state: Dict[str, Any]) -> Dict[str, Any]:
     docs = get_retriever(
         state.get("niche", "immigration"),
         state.get("country", "usa"),
-        k=4
+        k=15
     ).invoke(query)
 
     # Step 2: Filter out empty chunks
@@ -166,22 +166,51 @@ def retrieve_context(state: Dict[str, Any]) -> Dict[str, Any]:
 def generate_response(state: Dict[str, Any]) -> Dict[str, Any]:
     docs = state.get("docs", [])
     if not docs:
-        state["answer"] = "Sorry, I couldn’t find relevant info. Please check USCIS.gov."
+        logger.warning("[generate_response] No docs provided in state")
+        state["answer"] = ""
         return state
+
     history = "\n".join(
-        f"{'User' if isinstance(m,HumanMessage) else 'AI'}: {m.content}"
+        f"{'User' if isinstance(m, HumanMessage) else 'AI'}: {m.content}"
         for m in state["memory"].chat_memory.messages
     )
-    prompt_str = generate_response_prompt_free.format(
-        history=history,
-        context="\n\n".join(docs),
-        question=state["question"],
-        country=state.get("country","").upper(),
-        niche=state.get("niche",""),
-        form_name=state.get("form_name","")
-    )
-    state["answer"] = prompt_str
-    logger.info(f"[generate_response] prompt_len={len(prompt_str)}")
+
+    try:
+        prompt = generate_response_prompt.format(
+            history=history,
+            context="\n\n".join(docs),
+            question=state["question"],
+            form_name=""  # Default empty string for form_name
+        )
+        logger.debug(f"[generate_response] Prompt length: {len(prompt)} chars")
+        
+        # 👇  **call the LLM here**  (max-tokens & model come from ask_openai helper)
+        try:
+            completion = ask_openai(prompt, stream=False)
+            logger.debug(f"[generate_response] Raw completion type: {type(completion)}")
+            
+            if isinstance(completion, str):
+                answer = completion.strip()
+            elif isinstance(completion, (list, GeneratorType)):
+                answer = "".join(completion).strip()
+            else:
+                logger.error(f"[generate_response] Unexpected completion type: {type(completion)}")
+                answer = "I'm sorry, I could not generate a proper answer right now."
+                
+            if not answer:
+                logger.error("[generate_response] Empty answer received from LLM")
+                answer = "I'm sorry, I received an empty response. Please try asking your question again."
+                
+        except Exception as e:
+            logger.error(f"[generate_response] LLM completion error: {str(e)}", exc_info=True)
+            answer = "I'm sorry, I encountered an error while generating the answer. Please try again."
+            
+    except Exception as e:
+        logger.error(f"[generate_response] Prompt formatting error: {str(e)}", exc_info=True)
+        answer = "I'm sorry, I encountered an error while processing your question. Please try again."
+
+    state["answer"] = answer
+    logger.info(f"[generate_response] final_chars={len(answer)}")
     return state
 
 def generate_document(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -201,7 +230,7 @@ def greet_user(state: Dict[str, Any]) -> Dict[str, Any]:
     return state
 
 def deny_answer_confidently(state: Dict[str, Any]) -> Dict[str, Any]:
-    state["answer"] = "I’m sorry, I can’t help you with that."
+    state["answer"] = "I'm sorry, I can't help you with that."
     return state
 
 def log_query(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -220,8 +249,8 @@ from typing import Dict, List
 logger = logging.getLogger(__name__)
 
 # Be more aggressive:
-MAX_CONTEXT_TOKENS = 2000
-SUMMARY_TARGET_TOKENS = 300
+MAX_CONTEXT_TOKENS = 4000
+SUMMARY_TARGET_TOKENS = 500
 
 def count_tokens(text: str, model: str = "gpt-3.5-turbo") -> int:
     try:

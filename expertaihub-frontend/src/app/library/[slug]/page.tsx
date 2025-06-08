@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { FloatingMenu } from "@/components/FloatingMenu";
 import { FeedbackModal, FeedbackValues } from "@/components/FeedBackModel";
+import { useMonthlyUsage } from "@/hooks/useMonthlyUsage";          /* NEW */
 import {
   useState,
   useEffect,
@@ -30,9 +31,9 @@ import {
   Check,
   ThumbsUp,
   ThumbsDown,
-  Copy, 
+  Copy,
   CheckCircle,
-  Flag
+  Flag,
 } from "lucide-react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import ResponsiveSidebar from "@/components/ResponsiveSidebar";
@@ -73,18 +74,16 @@ export default function ChatPage() {
   const { slug } = useParams();
   const searchParams = useSearchParams();
 
-  // Toast
+  /* ── toast ──────────────────────────────── */
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
-
   useEffect(() => {
     if (!toastVisible) return;
-    const timer = setTimeout(() => setToastVisible(false), 3000);
-    return () => clearTimeout(timer);
+    const id = setTimeout(() => setToastVisible(false), 3_000);
+    return () => clearTimeout(id);
   }, [toastVisible]);
 
-
-  // Users & session metadata
+  /* ── user / session meta ────────────────── */
   const { user: currentUser, loading: userLoading } = useContext(UserContext);
   if (userLoading) return null;
   const [owner, setOwner] = useState<{ id: number; full_name: string }>(
@@ -123,7 +122,6 @@ export default function ChatPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editValue, setEditValue] = useState("");
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [usage, setUsage] = useState<{ used: number; limit: number }>({ used: 0, limit: 15 });
 
   // Per‐answer export dropdown
   const [openExportDropdownId, setOpenExportDropdownId] = useState<number | null>(null);
@@ -143,8 +141,9 @@ export default function ChatPage() {
     comments: "",
   });
 
+  const { used, limit, refresh: refreshUsage }= useMonthlyUsage(currentUser?.id ?? 0);
+  const outOfQuota      = used >= limit;
 
-  const outOfQuota = usage.used >= usage.limit;
 
 
 
@@ -269,6 +268,8 @@ export default function ChatPage() {
     if (slug && sessionChecked && !isPrivate) fetchHistory();
   }, [slug, sessionChecked, isPrivate]);
 
+
+
   // ——— Always scroll to bottom on new history ———
   useEffect(() => {
     if (!streaming) endRef.current?.scrollIntoView({ behavior: "auto" });
@@ -304,12 +305,7 @@ export default function ChatPage() {
   }
 
   // ——— Fetch usage ———
-  useEffect(() => {
-    api
-      .get<{ count: number }>("/monthly-usage/")
-      .then(r => setUsage(u => ({ ...u, used: r.data.count })))
-      .catch(() => {});
-  }, []);
+  
 
   // ——— Send & stream logic ———
   async function sendMessage(e: FormEvent) {
@@ -317,7 +313,7 @@ export default function ChatPage() {
     const text = input.trim();
     if (!text || !slug) return;
 
-    // If out of quota, just show a local “limit reached” stub
+    // If out of quota, just show a local "limit reached" stub
     if (outOfQuota) {
       const ts = new Date().toISOString();
       const uid = Date.now();
@@ -396,6 +392,7 @@ export default function ChatPage() {
       controllerRef.current = null;
       // Once streaming is done, re-fetch so that html_content is filled in
       fetchHistory();
+      void refreshUsage(); 
     }
   }
 
@@ -927,15 +924,7 @@ export default function ChatPage() {
                          inject as raw HTML.  
                       2) Otherwise (during streaming), fall back to live MarkdownRenderer.
                     */}
-                    {m.html_content ? (
-                      <div
-                        className="prose dark:prose-invert"
-                        dangerouslySetInnerHTML={{ __html: m.html_content }}
-                      />
-                    ) : (
                       <MarkdownRenderer content={m.content} />
-                    )}
-
                       {!(streaming && isLast) && (
                         <>
                           <div className="flex justify-between items-center mb-2 text-gray-500 dark:text-gray-400">
@@ -1107,7 +1096,7 @@ export default function ChatPage() {
         {/* ← usage on the left, controls on the right */}
         <div className="flex justify-between items-center mt-4">
           <div className="text-sm text-gray-600">
-            🔢 {usage.used} / {usage.limit} used this month
+            🔢 {used} / {limit} used this month
             {outOfQuota && (
               <div className="mt-1 text-red-600 text-sm">
                 You've reached your monthly limit.{" "}

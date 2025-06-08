@@ -1,9 +1,7 @@
-# chats/utils/renderers.py
-
 import markdown
 from bs4 import BeautifulSoup
 
-# 1) Configure Python-Markdown with GFM-style extensions
+# configure Python-Markdown with GFM-style extensions
 MD = markdown.Markdown(
     extensions=[
         "extra",      # tables, fenced code blocks, footnotes, etc.
@@ -13,7 +11,7 @@ MD = markdown.Markdown(
     output_format="html5",
 )
 
-# 2) Tailwind classes for each HTML tag you care about:
+# mapping of tag → list of Tailwind classes (tighter vertical rhythm)
 CLASS_MAP = {
     "h3":   ["text-xl", "font-base", "leading-tight", "font-cormorant", "mt-4", "mb-2"],
     "strong": ["font-semibold"],
@@ -23,22 +21,15 @@ CLASS_MAP = {
     "li":   ["mt-1", "marker:font-semibold"],
 }
 
-
 def render_markdown_to_html(markdown_text: str) -> str:
-    """
-    Convert a Markdown string to HTML with Tailwind 'prose'-style classes injected
-    on certain tags. Returns the final <html> snippet as a string.
-    """
     # 1) Convert MD → raw HTML
     html = MD.reset().convert(markdown_text)
 
-    # 2) Parse & inject classes into specific tags
+    # 2) Parse & inject classes
     soup = BeautifulSoup(html, "html.parser")
-    for tag_name, tw_classes in CLASS_MAP.items():
+    for tag_name, classes in CLASS_MAP.items():
         for tag in soup.find_all(tag_name):
             existing = tag.get("class", [])
-            tag["class"] = existing + tw_classes
+            tag["class"] = existing + classes
 
-    # 3) Return the modified HTML (as a string). You will wrap it in
-    #    <div class="prose dark:prose-invert"> on the frontend.
     return str(soup)

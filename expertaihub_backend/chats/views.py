@@ -102,8 +102,10 @@ class ChatSessionCreateView(APIView):
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 class ChatSessionStreamView(APIView):
+    """Stream a markdown answer to the client in real-time."""
     permission_classes = [permissions.IsAuthenticated]
 
+    # ───────────────────────── helpers ──────────────────────────
     def _get_this_month_usage(self, user):
         first_of_month = date.today().replace(day=1)
         usage, _ = MonthlyUsage.objects.get_or_create(
@@ -116,132 +118,118 @@ class ChatSessionStreamView(APIView):
     def _record_usage(self, user):
         usage = self._get_this_month_usage(user)
         usage.increment()
-        usage.save()  # make sure to persist the new count
+        usage.save()
 
-        # 1) Log locally
-        logger.info(f"[Usage] {user.email} ⇒ {usage.count} in {usage.period}")
+        logger.info("[Usage] %s ⇒ %s in %s", user.email, usage.count, usage.period)
 
-        # 2) Broadcast to WebSocket group “usage_{user.id}”
         channel_layer = get_channel_layer()
-        group_name = f"usage_{user.id}"
         async_to_sync(channel_layer.group_send)(
-            group_name,
-            {
-                "type": "usage.update",        # must match `usage_update` handler in consumer
-                "count": usage.count,
-            }
+            f"usage_{user.id}",
+            {"type": "usage.update", "count": usage.count},
         )
 
-    def _append_memory(self, session, role, content):
+    def _append_memory(self, session: ChatSession, role: str, content: str):
         data = session.memory_data or []
         data.append({"role": role, "content": content})
         session.memory_data = data
         session.save(update_fields=["memory_data", "updated"])
-        logger.debug(f"[Memory] appended {role} turn to session={session.slug}")
+        logger.debug("[Memory] appended %s turn to session=%s", role, session.slug)
 
+    # ───────────────────────── HEAD / POST ──────────────────────
     def head(self, request, slug, *args, **kwargs):
-        """Handle heartbeat requests to keep the connection alive."""
-        session = get_object_or_404(ChatSession, slug=slug, user=request.user)
+        get_object_or_404(ChatSession, slug=slug, user=request.user)
         return Response(status=status.HTTP_200_OK)
 
     def post(self, request, slug, *args, **kwargs):
-        # ── 1) Fetch session & require question
         session = get_object_or_404(ChatSession, slug=slug, user=request.user)
-        question = request.data.get("question", "").strip()
+        question = (request.data.get("question") or "").strip()
         if not question:
             return Response({"error": "Question required."},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # ── 2) Save user message + memory
+        # store the user turn
         ChatMessage.objects.create(session=session, role="user", content=question)
-        logger.info(f"[StreamView] Stored user message for session={slug}: {question!r}")
         self._append_memory(session, "user", question)
+        logger.info("[StreamView] Stored user message for %s: %s", slug, question)
 
+        # ────────── streaming generator ──────────
         def stream_response():
-            # Send an immediate "thinking" message
-            thinking_msg = "I'm analyzing your question and gathering relevant information..."
-            yield thinking_msg
+            # tiny ping so the FE shows a spinner instantly
+            yield "..."
 
-            # ── 3) Call RAG graph in background
             try:
+                # call LangGraph synchronously
                 result = graph.invoke({
                     "session_id": session.session_id,
-                    "question": question,
-                    "niche": getattr(session, "niche", "immigration"),
-                    "country": str(getattr(session, "country", "usa")).lower(),
+                    "question":   question,
+                    "niche":      getattr(session, "niche", "immigration"),
+                    "country":    str(getattr(session, "country", "usa")).lower(),
                     "used_retrieval": False,
                 })
-                answer_markdown = result.get("answer", "").strip()  # Markdown string
-                docs = result.get("docs") or []
-                logger.info(f"[StreamView] docs={len(docs)}, prompt_len={len(answer_markdown)}")
 
-                # ── 4) If we have docs AND a Markdown answer, stream OpenAI tokens
-                if docs and answer_markdown:
-                    buffer_pieces = []
-                    try:
-                        for token in ask_openai(answer_markdown, stream=True):
-                            piece = str(token)
-                            buffer_pieces.append(piece)
-                            logger.debug(f"[StreamView] yielding token: {piece!r}")
-                            yield piece
-                    except Exception as e:
-                        # If streaming fails for any reason, fallback to sending the entire Markdown at once
-                        logger.exception(f"[StreamView] Streaming failed, falling back: {e}")
-                        yield answer_markdown
-                        buffer_pieces = [answer_markdown]
+                answer_md = (result.get("answer") or "").strip()
+                docs      = result.get("docs") or []
+                logger.info("[StreamView] docs=%s • answer_len=%s",
+                            len(docs), len(answer_md))
 
-                    # ── 5) Once streaming ends, write final assistant message to DB + memory
-                    full_response = "".join(buffer_pieces) if buffer_pieces else answer_markdown
-                    ChatMessage.objects.create(
-                        session=session,
-                        role="assistant",
-                        content=full_response,
-                        html_content=render_markdown_to_html(full_response),
-                    )
-                    self._append_memory(session, "assistant", full_response)
+                if docs and answer_md:
+                    buffer: list[str] = []
+                    CHUNK = 12                         # words/flush
 
-                    session.completed = True
-                    session.updated = timezone.now()
-                    session.save(update_fields=["completed", "updated"])
-                    logger.info(f"[StreamView] Completed answer ({len(full_response)} chars)")
+                    words = answer_md.split(" ")
+                    for i in range(0, len(words), CHUNK):
+                        chunk = " ".join(words[i:i + CHUNK]) + " "
+                        buffer.append(chunk)
+                        yield chunk
+                        yield ""                        # explicit flush
 
-                    # Only increment usage if we actually streamed tokens from OpenAI (not fallback)
-                    if buffer_pieces and buffer_pieces != [answer_markdown]:
-                        self._record_usage(request.user)
-                else:
-                    # ── 6) STATIC FALLBACK (no retrieval)
-                    logger.debug(f"[StreamView] yielding static answer: {answer_markdown!r}")
-                    yield answer_markdown
+                    full = "".join(buffer)
 
                     ChatMessage.objects.create(
                         session=session,
                         role="assistant",
-                        content=answer_markdown,
-                        html_content=render_markdown_to_html(answer_markdown),
+                        content=full,
+                        html_content=render_markdown_to_html(full),
                     )
-                    self._append_memory(session, "assistant", answer_markdown)
+                    self._append_memory(session, "assistant", full)
 
                     session.completed = True
-                    session.updated = timezone.now()
+                    session.updated   = timezone.now()
                     session.save(update_fields=["completed", "updated"])
-                    logger.info(f"[StreamView] Completed static ({len(answer_markdown)} chars)")
 
-            except Exception as e:
-                logger.exception(f"[StreamView] Error processing request: {e}")
-                error_msg = "I apologize, but I encountered an error while processing your request. Please try again."
-                yield error_msg
-                
-                # Save error message to chat history
+                    self._record_usage(request.user)
+
+                else:  # fallback: no docs / empty answer
+                    yield answer_md or "Sorry, no relevant information found."
+                    ChatMessage.objects.create(
+                        session=session,
+                        role="assistant",
+                        content=answer_md,
+                        html_content=render_markdown_to_html(answer_md),
+                    )
+                    self._append_memory(session, "assistant", answer_md)
+
+                    session.completed = True
+                    session.updated   = timezone.now()
+                    session.save(update_fields=["completed", "updated"])
+
+            except Exception as exc:
+                logger.exception("[StreamView] Error: %s", exc)
+                err = ("I’m sorry — something went wrong while processing your "
+                       "request. Please try again in a moment.")
+                yield err
                 ChatMessage.objects.create(
                     session=session,
                     role="assistant",
-                    content=error_msg,
-                    html_content=render_markdown_to_html(error_msg),
+                    content=err,
+                    html_content=render_markdown_to_html(err),
                 )
-                self._append_memory(session, "assistant", error_msg)
+                self._append_memory(session, "assistant", err)
 
-        return StreamingHttpResponse(stream_response(), content_type="text/plain; charset=utf-8")
+        return StreamingHttpResponse(stream_response(),
+                                     content_type="text/plain; charset=utf-8")
 
+                                     
 class ChatSessionRunView(ChatSessionStreamView):
     """Synchronous endpoint that runs generation without streaming"""
 
