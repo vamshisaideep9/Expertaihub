@@ -9,9 +9,9 @@ from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.generics import CreateAPIView
-from django.http import StreamingHttpResponse
+from django.http import StreamingHttpResponse, HttpResponse
 from .models import ChatSession, ChatMessage, Reaction, AccessRequest
-from .serializers import ChatMessageSerializer, ChatSessionSerializer, MessageFeedbackSerializer
+from .serializers import ChatMessageSerializer, ChatSessionSerializer, MessageFeedbackSerializer, ReactionSerializer
 from ai_core.models import Advisor, Country
 from membership.models import MonthlyUsage
 from rest_framework.decorators import action
@@ -32,6 +32,9 @@ from docx.shared import Pt, Inches
 
 
 from django.contrib.staticfiles import finders
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from asgiref.sync import sync_to_async
+from rest_framework.request import Request
 
 
 logo_path = finders.find("logo-dark.png")
@@ -42,6 +45,128 @@ logger = logging.getLogger(__name__)
 graph = get_free_immigration_graph()
 
 
+class IsSessionOwner(permissions.BasePermission):
+    def has_permission(self, request, view):
+        slug = view.kwargs.get("slug")
+        # ensure that the session belongs to this user
+        return ChatSession.objects.filter(slug=slug, user=request.user).exists()
+
+from rest_framework.generics import RetrieveUpdateDestroyAPIView
+
+from .serializers import ChatMessageSerializer
+
+
+class ChatMessageDetail(RetrieveUpdateDestroyAPIView):
+    """
+    GET    /sessions/{slug}/messages/{message_id}/   
+    PATCH  /sessions/{slug}/messages/{message_id}/   → edit a user‐role message (and blank its old assistant reply)
+    DELETE /sessions/{slug}/messages/{message_id}/   → delete a user‐role message + its assistant reply
+    """
+    serializer_class   = ChatMessageSerializer
+    permission_classes = [IsSessionOwner]
+    lookup_url_kwarg   = "message_id"
+    lookup_field       = "id"
+
+    def get_queryset(self):
+        slug = self.kwargs["slug"]
+        return ChatMessage.objects.filter(
+            session__slug=slug,
+            session__user=self.request.user,
+            role="user",
+        )
+
+    def perform_update(self, serializer):
+        # 1) update the question itself
+        msg = serializer.save()
+        # 2) re-render its HTML
+        msg.html_content = render_markdown_to_html(msg.content)
+        msg.save(update_fields=["html_content"])
+        # 3) *blank* the very next assistant reply (if any) instead of deleting it
+        next_assistant = (
+            ChatMessage.objects
+            .filter(session=msg.session, role="assistant", id__gt=msg.id)
+            .order_by("id")
+            .first()
+        )
+        if next_assistant:
+            next_assistant.content = ""
+            next_assistant.html_content = ""
+            next_assistant.save(update_fields=["content", "html_content"])
+
+    def perform_destroy(self, instance):
+        # unchanged: delete paired assistant + then the user message
+        paired = (
+            ChatMessage.objects
+            .filter(session=instance.session, role="assistant", id__gt=instance.id)
+            .order_by("id")
+            .first()
+        )
+        if paired:
+            paired.delete()
+        super().perform_destroy(instance)
+
+
+class AsyncJWTAuthentication(JWTAuthentication):
+    def get_raw_token(self, request):
+        """
+        Override to handle ASGI request headers properly.
+        In ASGI, headers are already strings, not bytes.
+        """
+        try:
+            # In ASGI, headers are already strings
+            auth_header = request.headers.get('Authorization', '')
+            if not auth_header:
+                return None
+
+            # Split the header and validate format
+            parts = auth_header.split()
+            if len(parts) == 0:
+                return None
+
+            if parts[0] not in ('Bearer', 'Token'):
+                return None
+
+            if len(parts) != 2:
+                return None
+
+            return parts[1]
+        except Exception as e:
+            logger.exception("Failed to get raw token: %s", e)
+            return None
+
+    def authenticate(self, request):
+        """
+        Override authenticate to handle the async/sync boundary.
+        DRF expects this to be sync, so we'll do the async work in a thread.
+        """
+        try:
+            # Get the raw token using our custom method
+            raw_token = self.get_raw_token(request)
+            if raw_token is None:
+                return None
+
+            # Validate the token synchronously
+            validated_token = self.get_validated_token(raw_token)
+
+            # Get the user synchronously
+            user = self.get_user(validated_token)
+            if user is None:
+                return None
+
+            # Store the token in the request for later use
+            request.auth = validated_token
+            return user, validated_token
+        except Exception as e:
+            logger.exception("Authentication failed: %s", e)
+            return None
+
+    def authenticate_header(self, request):
+        """
+        Return a string to be used as WWW-Authenticate header in a
+        401 Unauthorized response, or None if the authentication scheme
+        should return 403 Forbidden responses.
+        """
+        return 'Bearer realm="api"'
 
 
 class ChatSessionCreateView(APIView):
@@ -100,191 +225,215 @@ class ChatSessionCreateView(APIView):
 
 
 from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
-class ChatSessionStreamView(APIView):
-    """Stream a markdown answer to the client in real-time."""
-    permission_classes = [permissions.IsAuthenticated]
+from asgiref.sync import async_to_sync, sync_to_async
 
-    # ───────────────────────── helpers ──────────────────────────
+class ChatSessionStreamView(APIView):
+    """
+    POST   /sessions/{slug}/stream/  
+      -> streams a new answer (or edit-in-place if you supply `reply_to`)
+    HEAD   /sessions/{slug}/stream/  
+      -> quick existence/auth health check
+    """
+    permission_classes = [permissions.IsAuthenticated, IsSessionOwner]
+    authentication_classes = [AsyncJWTAuthentication]
+
+    async def dispatch(self, request, *args, **kwargs):
+        # For POST, do DRF auth/perm checks synchronously
+        if request.method == "POST":
+            drf_req = await sync_to_async(self.initialize_request)(request)
+            await sync_to_async(self.perform_authentication)(drf_req)
+            await sync_to_async(self.check_permissions)(drf_req)
+            await sync_to_async(self.check_throttles)(drf_req)
+            return await self.post(drf_req, *args, **kwargs)
+        return await sync_to_async(super().dispatch)(request, *args, **kwargs)
+
     def _get_this_month_usage(self, user):
-        first_of_month = date.today().replace(day=1)
-        usage, _ = MonthlyUsage.objects.get_or_create(
-            user=user,
-            period=first_of_month,
-            defaults={"count": 0},
-        )
-        return usage
+        first = date.today().replace(day=1)
+        u, _ = MonthlyUsage.objects.get_or_create(user=user, period=first, defaults={"count": 0})
+        return u
 
     def _record_usage(self, user):
-        usage = self._get_this_month_usage(user)
-        usage.increment()
-        usage.save()
-
-        logger.info("[Usage] %s ⇒ %s in %s", user.email, usage.count, usage.period)
-
-        channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            f"usage_{user.id}",
-            {"type": "usage.update", "count": usage.count},
+        u = self._get_this_month_usage(user)
+        u.increment(); u.save()
+        async_to_sync(get_channel_layer().group_send)(
+            f"usage_{user.id}", {"type": "usage.update", "count": u.count}
         )
+        logger.info(f"[Usage] {user.email} ⇒ {u.count} in {u.period}")
 
-    def _append_memory(self, session: ChatSession, role: str, content: str):
-        data = session.memory_data or []
-        data.append({"role": role, "content": content})
-        session.memory_data = data
+    def _append_memory(self, session, role, content):
+        mem = session.memory_data or []
+        mem.append({"role": role, "content": content})
+        session.memory_data = mem
         session.save(update_fields=["memory_data", "updated"])
-        logger.debug("[Memory] appended %s turn to session=%s", role, session.slug)
 
-    # ───────────────────────── HEAD / POST ──────────────────────
-    def head(self, request, slug, *args, **kwargs):
-        get_object_or_404(ChatSession, slug=slug, user=request.user)
-        return Response(status=status.HTTP_200_OK)
+    async def head(self, request, slug, *args, **kwargs):
+        # just verify session exists & user owns it
+        await sync_to_async(get_object_or_404)(ChatSession, slug=slug, user=request.user)
+        return HttpResponse(status=status.HTTP_200_OK)
 
-    def post(self, request, slug, *args, **kwargs):
-        session = get_object_or_404(ChatSession, slug=slug, user=request.user)
+    async def options(self, request, *args, **kwargs):
+        # DRF's default OPTIONS is sync; wrap it
+        resp = await sync_to_async(super().options)(request, *args, **kwargs)
+        return resp
+
+    async def post(self, request, slug, *args, **kwargs):
+        # 1) Load + auth'd session
+        session = await sync_to_async(get_object_or_404)(ChatSession, slug=slug, user=request.user)
+
+        # 2) Pull payload
         question = (request.data.get("question") or "").strip()
+        reply_to = request.data.get("reply_to")  # existing assistant.id
+
         if not question:
-            return Response({"error": "Question required."},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return HttpResponse("Question required.", status=status.HTTP_400_BAD_REQUEST)
 
-        # store the user turn
-        ChatMessage.objects.create(session=session, role="user", content=question)
-        self._append_memory(session, "user", question)
-        logger.info("[StreamView] Stored user message for %s: %s", slug, question)
+        # 3) Persist user turn
+        if not reply_to:
+           await sync_to_async(ChatMessage.objects.create)(
+               session=session, role="user", content=question
+        )
+        await sync_to_async(self._append_memory)(session, "user", question)
+        logger.info(f"[StreamView] Stored user turn: {question}")
 
-        # ────────── streaming generator ──────────
-        def stream_response():
-            # tiny ping so the FE shows a spinner instantly
-            yield "..."
+        # 4) Prepare assistant stub
+        assistant = None
+        if reply_to:
+            assistant = await sync_to_async(ChatMessage.objects.filter(
+                id=reply_to, session=session, role="assistant"
+            ).first)()
+            if assistant:
+                assistant.content = ""
+                assistant.html_content = ""
+                await sync_to_async(assistant.save)(update_fields=["content", "html_content"])
 
-            try:
-                # call LangGraph synchronously
-                result = graph.invoke({
-                    "session_id": session.session_id,
-                    "question":   question,
-                    "niche":      getattr(session, "niche", "immigration"),
-                    "country":    str(getattr(session, "country", "usa")).lower(),
-                    "used_retrieval": False,
-                })
-
-                answer_md = (result.get("answer") or "").strip()
-                docs      = result.get("docs") or []
-                logger.info("[StreamView] docs=%s • answer_len=%s",
-                            len(docs), len(answer_md))
-
-                if docs and answer_md:
-                    buffer: list[str] = []
-                    CHUNK = 12                         # words/flush
-
-                    words = answer_md.split(" ")
-                    for i in range(0, len(words), CHUNK):
-                        chunk = " ".join(words[i:i + CHUNK]) + " "
-                        buffer.append(chunk)
-                        yield chunk
-                        yield ""                        # explicit flush
-
-                    full = "".join(buffer)
-
-                    ChatMessage.objects.create(
-                        session=session,
-                        role="assistant",
-                        content=full,
-                        html_content=render_markdown_to_html(full),
-                    )
-                    self._append_memory(session, "assistant", full)
-
-                    session.completed = True
-                    session.updated   = timezone.now()
-                    session.save(update_fields=["completed", "updated"])
-
-                    self._record_usage(request.user)
-
-                else:  # fallback: no docs / empty answer
-                    yield answer_md or "Sorry, no relevant information found."
-                    ChatMessage.objects.create(
-                        session=session,
-                        role="assistant",
-                        content=answer_md,
-                        html_content=render_markdown_to_html(answer_md),
-                    )
-                    self._append_memory(session, "assistant", answer_md)
-
-                    session.completed = True
-                    session.updated   = timezone.now()
-                    session.save(update_fields=["completed", "updated"])
-
-            except Exception as exc:
-                logger.exception("[StreamView] Error: %s", exc)
-                err = ("I’m sorry — something went wrong while processing your "
-                       "request. Please try again in a moment.")
-                yield err
-                ChatMessage.objects.create(
-                    session=session,
-                    role="assistant",
-                    content=err,
-                    html_content=render_markdown_to_html(err),
-                )
-                self._append_memory(session, "assistant", err)
-
-        return StreamingHttpResponse(stream_response(),
-                                     content_type="text/plain; charset=utf-8")
-
-                                     
-class ChatSessionRunView(ChatSessionStreamView):
-    """Synchronous endpoint that runs generation without streaming"""
-
-    def post(self, request, slug, *args, **kwargs):
-        session = get_object_or_404(ChatSession, slug=slug, user=request.user)
-        question = request.data.get("question", "").strip()
-        if not question:
-            return Response({"error": "Question required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        ChatMessage.objects.create(session=session, role="user", content=question)
-        logger.info(f"[RunView] Stored user message for session={slug}: {question!r}")
-        self._append_memory(session, "user", question)
-
-        try:
-            result = graph.invoke({
-                "session_id": session.session_id,
-                "question": question,
-                "niche": getattr(session, "niche", "immigration"),
-                "country": str(getattr(session, "country", "usa")).lower(),
-                "used_retrieval": False,
-            })
-            answer_markdown = result.get("answer", "").strip()
-            docs = result.get("docs") or []
-
-            if docs and answer_markdown:
-                full_response = ask_openai(answer_markdown, stream=False)
-                self._record_usage(request.user)
-            else:
-                full_response = answer_markdown
-
-            ChatMessage.objects.create(
-                session=session,
-                role="assistant",
-                content=full_response,
-                html_content=render_markdown_to_html(full_response),
+        if not assistant:
+            assistant = await sync_to_async(ChatMessage.objects.create)(
+                session=session, role="assistant", content="", html_content=""
             )
-            self._append_memory(session, "assistant", full_response)
+        stub_id = assistant.id
+        await sync_to_async(self._append_memory)(session, "assistant", "")
 
+        # 5) Streaming generator
+        async def stream_response():
+            full_answer = ""
+            try:
+                # invoke your LLM/RAG pipeline
+                country = await sync_to_async(lambda: str(getattr(session, "country", "usa")).lower())()
+                niche   = await sync_to_async(lambda: getattr(session, "niche", "immigration"))()
+                result  = await sync_to_async(graph.invoke)({
+                    "session_id": session.session_id,
+                    "question": question,
+                    "niche": niche,
+                    "country": country,
+                })
+                answer = (result.get("answer") or "").strip()
+                docs = result.get("docs", [])  # Get docs from result
+
+                # Record usage only if RAG was used (docs present)
+                if docs:
+                    await sync_to_async(self._record_usage)(request.user)
+
+            except Exception:
+                logger.exception("Graph invoke failed")
+                answer = "I'm sorry, I encountered an error. Please try again."
+
+            # optional reasoning header
+            if answer.startswith("**Model reasoning:**"):
+                summary, rest = answer.split("\n\n", 1)
+                yield summary + "\n\n"
+                full_answer += summary + "\n\n"
+                answer = rest
+
+            # stream in 12-word chunks
+            words = answer.split(" ")
+            for i in range(0, len(words), 12):
+                chunk = " ".join(words[i : i + 12]) + " "
+                full_answer += chunk
+                yield chunk
+                # persist interim assistant content
+                await sync_to_async(ChatMessage.objects.filter(id=stub_id).update)(
+                    content=full_answer
+                )
+
+            # final flush
+            yield ""
+            # render full HTML once finished
+            html = render_markdown_to_html(full_answer)
+            await sync_to_async(ChatMessage.objects.filter(id=stub_id).update)(
+                html_content=html
+            )
+
+            # mark session complete
             session.completed = True
             session.updated = timezone.now()
-            session.save(update_fields=["completed", "updated"])
-            logger.info(f"[RunView] Completed answer ({len(full_response)} chars)")
+            await sync_to_async(session.save)(update_fields=["completed", "updated"])
 
-        except Exception as e:
-            logger.exception(f"[RunView] Error processing request: {e}")
-            error_msg = "I apologize, but I encountered an error while processing your request. Please try again."
-            ChatMessage.objects.create(
-                session=session,
-                role="assistant",
-                content=error_msg,
-                html_content=render_markdown_to_html(error_msg),
-            )
-            self._append_memory(session, "assistant", error_msg)
+        return StreamingHttpResponse(stream_response(), content_type="text/plain; charset=utf-8")
+                                     
+# class ChatSessionRunView(ChatSessionStreamView):
+#     """Synchronous endpoint that runs generation without streaming"""
 
-        return Response({"detail": "completed"}, status=status.HTTP_200_OK)
+#     async def post(self, request, slug, *args, **kwargs):
+#         session = await sync_to_async(get_object_or_404)(
+#             ChatSession, slug=slug, user=request.user
+#         )
+#         question = request.data.get("question", "").strip()
+#         if not question:
+#             return Response(
+#                 {"error": "Question required."}, 
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         await sync_to_async(ChatMessage.objects.create)(
+#             session=session, 
+#             role="user", 
+#             content=question
+#         )
+#         logger.info(f"[RunView] Stored user message for session={slug}: {question!r}")
+#         await sync_to_async(self._append_memory)(session, "user", question)
+
+#         try:
+#             result = await sync_to_async(graph.invoke)({
+#                 "session_id": session.session_id,
+#                 "question": question,
+#                 "niche": getattr(session, "niche", "immigration"),
+#                 "country": str(getattr(session, "country", "usa")).lower(),
+#                 "used_retrieval": False,
+#             })
+#             answer_markdown = result.get("answer", "").strip()
+#             docs = result.get("docs") or []
+
+#             if docs and answer_markdown:
+#                 full_response = await sync_to_async(ask_openai)(answer_markdown, stream=False)
+#                 await sync_to_async(self._record_usage)(request.user)
+#             else:
+#                 full_response = answer_markdown
+
+#             await sync_to_async(ChatMessage.objects.create)(
+#                 session=session,
+#                 role="assistant",
+#                 content=full_response,
+#                 html_content=render_markdown_to_html(full_response),
+#             )
+#             await sync_to_async(self._append_memory)(session, "assistant", full_response)
+
+#             session.completed = True
+#             session.updated = timezone.now()
+#             await sync_to_async(session.save)(update_fields=["completed", "updated"])
+#             logger.info(f"[RunView] Completed answer ({len(full_response)} chars)")
+
+#         except Exception as e:
+#             logger.exception(f"[RunView] Error processing request: {e}")
+#             error_msg = "I apologize, but I encountered an error while processing your request. Please try again."
+#             await sync_to_async(ChatMessage.objects.create)(
+#                 session=session,
+#                 role="assistant",
+#                 content=error_msg,
+#                 html_content=render_markdown_to_html(error_msg),
+#             )
+#             await sync_to_async(self._append_memory)(session, "assistant", error_msg)
+
+#         return Response({"detail": "completed"}, status=status.HTTP_200_OK)
 
 class ChatSessionViewSet(
     mixins.ListModelMixin,
@@ -338,7 +487,7 @@ class ChatSessionViewSet(
     def retrieve(self, request, *args, **kwargs):
         session = self.get_object()
 
-        # 1) Public‐link
+        # 1) Public-link
         if session.share_option == "link":
             return super().retrieve(request, *args, **kwargs)
 
@@ -346,7 +495,7 @@ class ChatSessionViewSet(
         if session.user == request.user or session.allowed_users.filter(pk=request.user.pk).exists():
             return super().retrieve(request, *args, **kwargs)
 
-        # 3) Private + unauthorized → just forbid, no auto‐email
+        # 3) Private + unauthorized → just forbid, no auto-email
         return Response(
             {"detail": "This session is private. Click Request Access to notify the owner."},
             status=status.HTTP_403_FORBIDDEN
@@ -813,34 +962,33 @@ class ReactionUpsertView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, slug, message_id, *args, **kwargs):
+        # 1) Load the target message
         msg = get_object_or_404(
             ChatMessage,
             pk=message_id,
-            session__slug=slug,
-            session__user=request.user
+            session__slug=slug
         )
 
-        # 2) Validate input
-        reaction = request.data.get("reaction")
-        if reaction not in (Reaction.LIKE, Reaction.DISLIKE):
-            return Response({"error":"Invalid reaction"}, status=status.HTTP_400_BAD_REQUEST)
+        # 2) Build payload for serializer
+        data = request.data.copy()
+        data["message"] = msg.id
 
-        # 3) Create or update
-        obj, created = Reaction.objects.update_or_create(
-            user=request.user,
-            message=msg,
-            defaults={"reaction": reaction}
-        )
+        # 3) Validate & upsert
+        serializer = ReactionSerializer(data=data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        react = serializer.save()
 
-        # 4) Return updated counts & my_reaction
+        # 4) Return your reaction + optional reason/comment + fresh counts
         likes    = msg.reactions.filter(reaction=Reaction.LIKE).count()
         dislikes = msg.reactions.filter(reaction=Reaction.DISLIKE).count()
+
         return Response({
-            "my_reaction": obj.reaction,
-            "likes_count": likes,
-            "dislikes_count": dislikes
+            "my_reaction":    react.reaction,
+            "my_reason":      react.reason,   # may be "" if none provided
+            "my_comment":     react.comment,  # may be "" if none provided
+            "likes_count":    likes,
+            "dislikes_count": dislikes,
         })
-    
 
 class MessageFeedbackCreateView(CreateAPIView):
     """

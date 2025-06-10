@@ -155,7 +155,10 @@ class ChatMessage(models.Model):
     
 
 
+from django.core.exceptions import ValidationError
+
 class Reaction(models.Model):
+    # -- reaction types --
     LIKE    = "like"
     DISLIKE = "dislike"
     REACTION_CHOICES = [
@@ -163,12 +166,76 @@ class Reaction(models.Model):
         (DISLIKE, "Dislike"),
     ]
 
-    user     = models.ForeignKey(User, on_delete=models.CASCADE)
-    message  = models.ForeignKey(ChatMessage, on_delete=models.CASCADE, related_name="reactions")
-    reaction = models.CharField(max_length=7, choices=REACTION_CHOICES)
+    # -- like reasons --
+    LIKE_UP_TO_DATE        = "up_to_date"
+    LIKE_ACCURATE          = "accurate"
+    LIKE_HELPFUL           = "helpful"
+    LIKE_FOLLOWED_INSTR    = "followed_instructions"
+    LIKE_GOOD_SOURCES      = "good_sources"
+    LIKE_OTHER             = "like_other"
+    LIKE_REASON_CHOICES = [
+        (LIKE_UP_TO_DATE,     "Up to date"),
+        (LIKE_ACCURATE,       "Accurate"),
+        (LIKE_HELPFUL,        "Helpful"),
+        (LIKE_FOLLOWED_INSTR, "Followed instructions"),
+        (LIKE_GOOD_SOURCES,   "Good sources"),
+        (LIKE_OTHER,          "Other…"),
+    ]
+
+    # -- dislike reasons --
+    DIS_OUT_OF_DATE   = "out_of_date"
+    DIS_INACCURATE    = "inaccurate"
+    DIS_WRONG_SOURCES = "wrong_sources"
+    DIS_TOO_LONG      = "too_long"
+    DIS_TOO_SHORT     = "too_short"
+    DIS_OTHER         = "dis_other"
+    DISLIKE_REASON_CHOICES = [
+        (DIS_OUT_OF_DATE,   "Out of date"),
+        (DIS_INACCURATE,    "Inaccurate"),
+        (DIS_WRONG_SOURCES,"Wrong sources"),
+        (DIS_TOO_LONG,      "Too long"),
+        (DIS_TOO_SHORT,     "Too short"),
+        (DIS_OTHER,         "Other…"),
+    ]
+
+    user     = models.ForeignKey(User,
+                                 on_delete=models.CASCADE)
+    message  = models.ForeignKey(ChatMessage,
+                                 on_delete=models.CASCADE,
+                                 related_name="reactions")
+    reaction = models.CharField(max_length=7,
+                                choices=REACTION_CHOICES)
+    # the “why” field:
+    reason   = models.CharField(
+        max_length=32,
+        blank=True,
+        help_text="Pick one reason why they (dis)liked the response."
+    )
+    # optional free-text if they pick “Other”
+    comment  = models.TextField(blank=True,
+                                help_text="If you selected Other…, please specify")
 
     class Meta:
         unique_together = ("user", "message")
+
+    def clean(self):
+        # ensure the chosen reason matches the reaction type
+        if not self.reason:
+            return
+
+        # ensure the chosen reason matches the reaction type
+        valid = dict(self.LIKE_REASON_CHOICES) if self.reaction == self.LIKE else dict(self.DISLIKE_REASON_CHOICES)
+
+        if self.reason not in valid:
+            raise ValidationError({"reason": f"Invalid reason for a {self.reaction}."})
+
+        # If they chose “Other…”, require a comment
+        if self.reason in {self.LIKE_OTHER, self.DIS_OTHER} and not self.comment.strip():
+            raise ValidationError({"comment": "Please explain what you meant by “Other…”"})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 class FeedbackReason(models.TextChoices):
     INACCURATE        = "inaccurate",        "Inaccurate"

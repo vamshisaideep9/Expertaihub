@@ -17,19 +17,63 @@ class SimpleUserSerializer(serializers.ModelSerializer):
         fields = ("id", "email", "full_name")
 
 
+
 class ReactionSerializer(serializers.ModelSerializer):
-    """
-    Create or update a user's reaction (like/dislike) to a ChatMessage.
-    """
+    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    reason  = serializers.ChoiceField(
+        choices=Reaction.LIKE_REASON_CHOICES + Reaction.DISLIKE_REASON_CHOICES,
+        required=False,
+        allow_blank=True,
+    )
+    comment = serializers.CharField(required=False, allow_blank=True)
+
     class Meta:
         model = Reaction
-        fields = ["message", "reaction"]
+        fields = ["user", "message", "reaction", "reason", "comment"]
+        validators = []
+
+    def validate(self, data):
+        reason  = data.get("reason", "").strip()
+        comment = data.get("comment", "").strip()
+
+        # if no reason provided, skip all further validation
+        if not reason:
+            return data
+
+        # pick the correct lookup table
+        valid = dict(Reaction.LIKE_REASON_CHOICES) if data["reaction"] == Reaction.LIKE else dict(Reaction.DISLIKE_REASON_CHOICES)
+        if reason not in valid:
+            raise serializers.ValidationError({"reason": f"Invalid reason for '{data['reaction']}'."})
+
+        # if they chose “Other…”, require a non-empty comment
+        if reason in {Reaction.LIKE_OTHER, Reaction.DIS_OTHER} and not comment:
+            raise serializers.ValidationError({"comment": "Please explain what “Other…” means."})
+
+        return data
+
+    def create(self, validated_data):
+        # fill in defaults so we never KeyError
+        reason  = validated_data.get("reason", "")
+        comment = validated_data.get("comment", "")
+
+        obj, _ = Reaction.objects.update_or_create(
+            user=validated_data["user"],
+            message=validated_data["message"],
+            defaults={
+                "reaction": validated_data["reaction"],
+                "reason":    reason,
+                "comment":   comment,
+            },
+        )
+        return obj
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):
     likes_count             = serializers.SerializerMethodField()
     dislikes_count          = serializers.SerializerMethodField()
     user_reaction           = serializers.SerializerMethodField()
+    reaction_reason_counts  = serializers.SerializerMethodField()
+    user_reaction_detail    = serializers.SerializerMethodField()
     feedback_reason_counts  = serializers.SerializerMethodField()
     user_feedback           = serializers.SerializerMethodField()
     html_content            = serializers.CharField(read_only=True)
@@ -39,8 +83,10 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         fields = [
             "id", "session", "role", "content", "html_content", "timestamp",
             "likes_count", "dislikes_count", "user_reaction",
+            "reaction_reason_counts", "user_reaction_detail",
             "feedback_reason_counts", "user_feedback",
-        ]
+            ]
+        read_only_fields = ["id", "session", "role", "timestamp"]
 
     def get_likes_count(self, obj):
         return obj.reactions.filter(reaction=Reaction.LIKE).count()
@@ -54,21 +100,37 @@ class ChatMessageSerializer(serializers.ModelSerializer):
             return None
         react = obj.reactions.filter(user=user).first()
         return react.reaction if react else None
+    
+
+    def get_reaction_reason_counts(self, obj):
+        # Count how many users picked each reason for both likes & dislikes
+        counts = {}
+        choices = list(Reaction.LIKE_REASON_CHOICES) + list(Reaction.DISLIKE_REASON_CHOICES)
+        for key, _ in choices:
+            counts[key] = obj.reactions.filter(reason=key).count()
+        return counts
+
+    def get_user_reaction_detail(self, obj):
+        # Return my full reaction record (type, reason & comment)
+        user = self.context["request"].user
+        if not user.is_authenticated:
+            return None
+        react = obj.reactions.filter(user=user).first()
+        if not react:
+            return None
+        return {
+            "reaction": react.reaction,
+            "reason":   react.reason,
+            "comment":  react.comment,
+        }
 
     def get_feedback_reason_counts(self, obj):
-        """
-        Return a dict of { reason_value: count } for all reasons.
-        """
         counts = {}
-        for value, label in FeedbackReason.choices:
+        for value, _ in FeedbackReason.choices:
             counts[value] = obj.feedbacks.filter(reasons__contains=[value]).count()
         return counts
 
     def get_user_feedback(self, obj):
-        """
-        If the current user has submitted feedback on this message,
-        return {'reasons': [...], 'additional_comments': '...'}, otherwise None.
-        """
         user = self.context["request"].user
         if not user.is_authenticated:
             return None
@@ -82,8 +144,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
-        request = self.context.get("request", None)
-        # hide raw counts from non-staff if you like
+        request = self.context.get("request")
         if not (request and request.user.is_staff):
             rep.pop("likes_count", None)
             rep.pop("dislikes_count", None)
@@ -194,3 +255,4 @@ class MessageFeedbackSerializer(serializers.ModelSerializer):
         model = MessageFeedback
         fields = ["id", "user", "message", "reasons", "additional_comments", "created_at"]
         read_only_fields = ["id", "user", "created_at"]
+

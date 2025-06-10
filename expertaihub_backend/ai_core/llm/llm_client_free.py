@@ -1,6 +1,7 @@
 # ai_core/llm/llm_client.py
-import os, logging, itertools
-from typing import Generator, Iterable, Union, Any
+
+import os, logging
+from typing import Generator, Iterable, Union
 
 from dotenv import load_dotenv
 from openai import OpenAI, OpenAIError
@@ -9,25 +10,17 @@ from openai.types.chat.chat_completion import ChatCompletion as Response
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────────
-#  Global defaults
-# ──────────────────────────────────────────────────────────────
-DEFAULT_MODEL            = "o4-mini"     # 128 k ctx, reasoning-capable
-DEFAULT_REASONING_EFFORT = "medium"      # "low" | "medium" | "high"
-DEFAULT_MAX_TOKENS       = 60000        # fits in o4-mini's 128 k ctx
+DEFAULT_MODEL            = "o4-mini"
+DEFAULT_REASONING_EFFORT = "medium"
+DEFAULT_MAX_TOKENS       = 60000
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# Typing helper
 _OpenAIResult = Union[str, Generator[str, None, None]]
 
 def _stream_to_generator(resp_stream: Iterable[Response]) -> Generator[str, None, None]:
-    """
-    Convert OpenAI's event stream → single-token generator (`str` tokens).
-    """
     try:
         for chunk in resp_stream:
-            delta = chunk.output_items[0]            # 1st (and only) item
+            delta = chunk.output_items[0]
             token = getattr(delta, "text", "")
             if token:
                 yield token
@@ -36,65 +29,67 @@ def _stream_to_generator(resp_stream: Iterable[Response]) -> Generator[str, None
         yield ("I'm sorry — an error occurred while streaming the answer. "
                "Please retry in a moment.")
 
-# ──────────────────────────────────────────────────────────────
-#  Public helper
-# ──────────────────────────────────────────────────────────────
 def ask_openai(
     prompt_text: str,
     *,
-    model: str                     = DEFAULT_MODEL,
-    reasoning_effort: str          = DEFAULT_REASONING_EFFORT,  # "low|medium|high"
-    max_tokens: int                = DEFAULT_MAX_TOKENS,
-    include_reasoning_summary: bool = False,                    # set True if you want it
-    stream: bool                   = False,
+    model: str                      = DEFAULT_MODEL,
+    reasoning_effort: str           = DEFAULT_REASONING_EFFORT,
+    max_tokens: int                 = DEFAULT_MAX_TOKENS,
+    include_reasoning_summary: bool = False,
+    stream: bool                    = False,
 ) -> _OpenAIResult:
-    """
-    Thin wrapper over the *Responses* API.
-
-    • `stream=False`  → single string
-    • `stream=True`   → generator[str]
-
-    All 4 000-line callers keep working untouched.
-    """
     try:
-        # 1) Build request
-        request: dict = {
-            "model"            : model,
-            "input"            : [{"role": "user", "content": prompt_text}],
+        # Build request payload
+        request = {
+            "model": model,
+            "input": [{"role": "user", "content": prompt_text}],
             "max_output_tokens": max_tokens,
-            "reasoning"        : {
-                "effort": reasoning_effort,
-                # ask for a summary if caller wants it
-                **({"summary": "auto"} if include_reasoning_summary else {}),
-            },
-            # streaming handled below
+            "reasoning": {"effort": reasoning_effort}
         }
+        if include_reasoning_summary:
+            request["reasoning"]["summary"] = "auto"
 
-        logger.info("[ask_openai] model=%s, tokens=%s, effort=%s, stream=%s, prompt_len=%s",
-                    model, max_tokens, reasoning_effort, stream, len(prompt_text))
+        logger.info("[ask_openai] model=%s, effort=%s, stream=%s, summary=%s",
+                    model, reasoning_effort, stream, include_reasoning_summary)
 
-        # 2) Fire the request
+        # Streaming branch
         if stream:
             request["stream"] = True
             resp_stream = client.responses.create(**request)
-            return _stream_to_generator(resp_stream)
 
-        # non-streaming
+            def gen_with_summary():
+                # 1) Pull off the first event to get the summary
+                try:
+                    first = next(resp_stream)
+                    summary = getattr(first, "reasoning_summary", None)
+                    if summary:
+                        # emit the summary as Markdown
+                        yield f"**Model reasoning:**\n{summary}\n\n"
+                    # if that first chunk also has text, emit it
+                    delta = first.output_items[0]
+                    if getattr(delta, "text", ""):
+                        yield delta.text
+                except StopIteration:
+                    return
+
+                # 2) Now hand off the rest of the tokens
+                yield from _stream_to_generator(resp_stream)
+
+            return gen_with_summary()
+
+        # Non-streaming branch
         resp = client.responses.create(**request)
-        out  = resp.output_text or ""
-        logger.info("[ask_openai] received %s chars (input=%s, reasoning=%s, output=%s tokens)",
-                    len(out),
-                    resp.usage.input_tokens,
-                    resp.usage.output_tokens_details.reasoning_tokens,
-                    resp.usage.output_tokens)
-        return out.strip()
+        text = resp.output_text or ""
+        if include_reasoning_summary:
+            summary = getattr(resp, "reasoning_summary", None)
+            if summary:
+                text = f"**Model reasoning:**\n{summary}\n\n" + text
+        return text.strip()
 
-    # ── Error handling
     except OpenAIError as e:
         logger.error("[ask_openai] OpenAI API error: %s", e, exc_info=True)
     except Exception as e:
         logger.error("[ask_openai] Unexpected error: %s", e, exc_info=True)
 
-    msg = ("I'm sorry, I couldn't reach the language model. "
-           "Please try again in a moment.")
-    return (token for token in [msg]) if stream else msg
+    fallback = "I'm sorry, I couldn't reach the language model. Please try again."
+    return (token for token in [fallback]) if stream else fallback

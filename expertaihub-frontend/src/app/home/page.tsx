@@ -22,13 +22,10 @@ export default function HomePage() {
   const [showSug, setShowSug] = useState(false);
   const [advisorName, setAdvisor] = useState("...");
   const [countryName, setCountry] = useState("...");
-  const [usage, setUsage] = useState<{ used: number; limit: number }>({ used: 0, limit: 15 });
   const [pendingSlug, setPendingSlug] = useState<string | null>(null);   // ← track the slug
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<AbortController | null>(null);
-
-  const outOfQuota = usage.used >= usage.limit;
 
   useEffect(() => {
         apiPrivate.get<{ name: string }>("/advisor/")
@@ -47,8 +44,9 @@ export default function HomePage() {
           .catch(console.error);
       }, []);
     
-      const realtime = useMonthlyUsage(currentUser.id);  //  ← hook
-      useEffect(() => setUsage(realtime), [realtime]);
+      const { used, limit, refresh: refreshUsage } = useMonthlyUsage(currentUser.id);
+      const outOfQuota = used >= limit;
+
 
   // abort on unmount
   useEffect(() => () => controllerRef.current?.abort(), []);
@@ -57,40 +55,6 @@ export default function HomePage() {
   const filtered = DEFAULT_SUGGESTIONS.filter(s =>
     s.toLowerCase().includes(question.toLowerCase())
   );
-
-  async function startChat(overrideQ?: string) {
-    const q = (overrideQ ?? question).trim();
-    if (!q || outOfQuota) return;
-
-    const ctrl = new AbortController();
-    controllerRef.current = ctrl;
-    setProcessing(true);
-
-    try {
-      // 1️⃣ create session
-      const { data: { slug } } = await apiPrivate.post<{ slug: string }>(
-        "/sessions/create/",
-        { question: q, country: "+1" },
-        { signal: ctrl.signal }
-      );
-      setPendingSlug(slug);  // ← remember it
-
-      // 2️⃣ run generation synchronously (non-streaming)
-      await apiPrivate.post(
-        `/sessions/${slug}/run/`,
-        { question: q },
-        { signal: ctrl.signal }
-      );
-
-      router.push(`/library/${slug}`);
-    } catch (err: any) {
-      const isAbort = ["AbortError","CanceledError"].includes(err.name) || err.code === "ERR_CANCELED";
-      if (!isAbort) console.error("startChat errored:", err);
-    } finally {
-      setProcessing(false);
-      controllerRef.current = null;
-    }
-  }
 
   async function stopProcessing() {
     // 1️⃣ abort fetch
@@ -106,14 +70,92 @@ export default function HomePage() {
       setPendingSlug(null);
     }
 
-    // 3️⃣ refresh usage so aborted session doesn’t count
-    try {
-      const { data } = await apiPrivate.get<{ count: number }>("/monthly-usage/");
-      setUsage(u => ({ ...u, used: data.count }));
-    } catch {}
-
-    // 4️⃣ finally stop spinner
+    // 3️⃣ finally stop spinner and clear controller
     setProcessing(false);
+    controllerRef.current = null;
+  }
+
+  async function startChat(overrideQ?: string) {
+    const q = (overrideQ ?? question).trim();
+    if (!q || outOfQuota) return;
+
+    // If we're already processing, stop it first
+    if (processing) {
+      await stopProcessing();
+      // Add a small delay to ensure cleanup is complete
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    const ctrl = new AbortController();
+    controllerRef.current = ctrl;
+    setProcessing(true);
+
+    try {
+      // 1️⃣ create session
+      const { data: { slug } } = await apiPrivate.post<{ slug: string }>(
+        "/sessions/create/",
+        { question: q, country: "+1" },
+        { signal: ctrl.signal }
+      );
+      setPendingSlug(slug);
+
+      // 2️⃣ stream generation
+      const token = document.cookie.match(/(?:^|; )token=([^;]+)/)?.[1];
+      const base = process.env.NEXT_PUBLIC_API_BASE || "";
+      const res = await fetch(`${base}/sessions/${slug}/stream/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify({ question: q }),
+        credentials: "include",
+        signal: ctrl.signal,
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+
+      if (!res.body) {
+        throw new Error("No streaming body");
+      }
+
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let done = false;
+
+      while (!done) {
+        try {
+          const { value, done: rd } = await reader.read();
+          done = rd;
+          if (value) {
+            // Just consume the chunks without updating UI
+            dec.decode(value);
+          }
+        } catch (err: any) {
+          if (err.name === "AbortError" || err.code === "ERR_CANCELED") {
+            // If aborted, clean up and return without navigating
+            await stopProcessing(); // Use the existing cleanup function
+            return; // Exit early on abort
+          }
+          throw err; // Re-throw other errors
+        }
+      }
+
+      // Only navigate if we completed the entire stream
+      router.push(`/library/${slug}`);
+    } catch (err: any) {
+      const isAbort = ["AbortError", "CanceledError"].includes(err.name) || err.code === "ERR_CANCELED";
+      if (!isAbort) {
+        console.error("startChat errored:", err);
+        await stopProcessing(); // Use the existing cleanup function
+      }
+    } finally {
+      if (!controllerRef.current) { // Only reset if we're not still processing
+        setProcessing(false);
+      }
+    }
   }
 
   return (
@@ -126,7 +168,7 @@ export default function HomePage() {
           </h1>
           <div
             ref={containerRef}
-            className="relative w-full max-w-xl"
+            className="relative w-full max-w-2xl mx-auto"
             onBlur={e => {
               if (!containerRef.current?.contains(e.relatedTarget as Node)) {
                 setShowSug(false);
@@ -134,57 +176,91 @@ export default function HomePage() {
             }}
           >
             <form
-              onSubmit={e => { e.preventDefault(); startChat(); }}
-              className="flex items-center bg-[#fcfbf7] border border-gray-600 rounded-xl overflow-visible h-16 w-full"
-            >
-              <input
-                type="text"
-                className="flex-1 px-4 py-3 text-base placeholder-gray-400 bg-[#fcfbf7] focus:outline-none"
-                placeholder={placeholder}
-                value={question}
-                onChange={e => setQuestion(e.target.value)}
-                onFocus={() => setShowSug(true)}
-                disabled={processing}
-              />
-              <div className="flex items-center space-x-4 pr-4">
-                <div className="relative group">
-                  <button type="button" disabled={processing} className="text-gray-600 hover:text-gray-900">
-                    <Mic className="w-5 h-5 cursor-pointer" />
-                  </button>
-                  <span className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 whitespace-nowrap bg-gray-800 text-white text-xs rounded py-1 px-2 opacity-0 group-hover:opacity-100">
-                    Microphone
-                  </span>
-                </div>
-                {processing ? (
-                  <div className="relative group">
-                    <button type="button" onClick={stopProcessing} className="text-red-600 hover:text-red-800">
-                      <StopCircle className="w-6 h-6 cursor-pointer" />
-                    </button>
-                    <span className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 whitespace-nowrap bg-gray-800 text-white text-xs rounded py-1 px-2 opacity-0 group-hover:opacity-100">
-                      Stop streaming
-                    </span>
-                  </div>
-                ) : (
-                  <div className="relative group">
-                    <button type="submit" disabled={!question.trim()} className="text-gray-600 hover:text-gray-900">
-                      <Send className="w-5 h-5 cursor-pointer" />
-                    </button>
-                    <span className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 whitespace-nowrap bg-gray-800 text-white text-xs rounded py-1 px-2 opacity-0 group-hover:opacity-100">
-                      Send question
-                    </span>
-                  </div>
-                )}
-              </div>
-            </form>
+  onSubmit={e => { e.preventDefault(); startChat(); }}
+  className="mt-auto sticky bottom-0 p-2 z-10 bg-[#fcfbf7] dark:bg-gray-900"
+>
+  <div className="w-full max-w-3xl mx-auto">
+    <div className="flex flex-col bg-[#fcfbf7] dark:bg-[#2A2C3E] border border-gray-600 dark:border-gray-700 rounded-2xl p-4">
+      <textarea
+        rows={1}
+        className="w-full bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-600 dark:placeholder-gray-500 resize-none overflow-y-auto max-h-36 focus:outline-none scrollbar-thin scrollbar-thumb-gray-700 dark:scrollbar-thumb-gray-900"
+        placeholder={placeholder}
+        value={question}
+        onChange={e => setQuestion(e.target.value)}
+        onFocus={() => setShowSug(true)}
+        disabled={processing}
+        onInput={e => {
+          const ta = e.currentTarget;
+          ta.style.height = "auto";
+          ta.style.height = `${ta.scrollHeight}px`;
+        }}
+        onKeyDown={e => {
+               if (e.key === "Enter" && !e.shiftKey) {
+                 e.preventDefault();
+                 startChat();
+               }
+             }}
+      />
 
-            <div className="mt-2 text-sm text-gray-600 text-center">
-              🔢 {usage.used} / {usage.limit} used this month
+      <div className="flex justify-between items-center mt-4">
+        <div className="text-sm text-gray-600">
+          🔢 {used} / {limit} used this month
+          {outOfQuota && (
+            <div className="mt-1 text-red-600">
+              You've reached your limit.{" "}
+              <a href="/pro" className="underline">
+                Upgrade to Pro
+              </a>
             </div>
-            {outOfQuota && (
-              <div className="mt-1 text-red-600 text-sm text-center">
-                You’ve reached your monthly limit. <a href="/pro" className="underline">Upgrade to Pro</a> to continue.
-              </div>
-            )}
+          )}
+        </div>
+
+        <div className="flex items-center space-x-4">
+          <div className="relative inline-flex flex-col items-center group">
+            <button
+              type="button"
+              disabled={processing}
+              className="p-1 rounded text-gray-600 hover:text-gray-900"
+            >
+              <Mic className="w-5 h-5 cursor-pointer" />
+            </button>
+            <span className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 whitespace-nowrap bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100">
+              Microphone
+            </span>
+          </div>
+
+          {processing ? (
+            <div className="relative inline-flex flex-col items-center group">
+              <button
+                type="button"
+                onClick={stopProcessing}
+                className="p-1 rounded text-red-600 hover:text-red-800"
+              >
+                <StopCircle className="w-6 h-6 cursor-pointer" />
+              </button>
+              <span className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 whitespace-nowrap bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100">
+                Stop streaming
+              </span>
+            </div>
+          ) : (
+            <div className="relative inline-flex flex-col items-center group">
+              <button
+                type="submit"
+                disabled={!question.trim()}
+                className="p-1 rounded text-gray-600 hover:text-gray-900"
+              >
+                <Send className="w-5 h-5 cursor-pointer" />
+              </button>
+              <span className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 whitespace-nowrap bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100">
+                Send question
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
 
             {showSug && (
               <ul className="absolute left-0 right-0 mt-1 bg-[#fcfbf7] border border-t-0 border-gray-300 rounded-b-xl z-20 overflow-visible">

@@ -11,6 +11,7 @@ from ai_core.prompts.prompts import (
     generate_response_prompt,
     safety_prompt,
 )
+from ai_core.llm.llm_client_free import DEFAULT_REASONING_EFFORT
 from ai_core.langgraph.memory import MemoryStore
 from langchain_core.memory import BaseMemory
 from langchain_core.messages import HumanMessage
@@ -186,7 +187,7 @@ def generate_response(state: Dict[str, Any]) -> Dict[str, Any]:
         
         # 👇  **call the LLM here**  (max-tokens & model come from ask_openai helper)
         try:
-            completion = ask_openai(prompt, stream=False)
+            completion = ask_openai( prompt, stream=False)
             logger.debug(f"[generate_response] Raw completion type: {type(completion)}")
             
             if isinstance(completion, str):
@@ -226,8 +227,27 @@ def clarify_question(state: Dict[str, Any]) -> Dict[str, Any]:
     return state
 
 def greet_user(state: Dict[str, Any]) -> Dict[str, Any]:
-    state["answer"] = "👋 Hello! How can I help you with your immigration question today?"
+    from ai_core.llm.llm_client_free import ask_openai
+
+    raw = state.get("question", "").strip()
+    # Build a mini prompt to steer the model toward a friendly greeting
+    prompt = (
+        "You are a friendly U.S. immigration virtual assistant. "
+        "The user just said: \"{user_input}\". "
+        "Reply with a brief, engaging greeting that confirms you’re ready to help with their immigration question—no extra explanation.\n\n"
+        "Assistant:"
+    ).format(user_input=raw)
+
+    try:
+        # ask_openai returns either a string or list; coerce to string
+        resp = ask_openai(prompt, stream=False)
+        answer = resp if isinstance(resp, str) else "".join(resp)
+        state["answer"] = answer.strip()
+    except Exception as e:
+        # Fallback to a safe default
+        state["answer"] = "👋 Hello! How can I assist you with your immigration question today?"
     return state
+
 
 def deny_answer_confidently(state: Dict[str, Any]) -> Dict[str, Any]:
     state["answer"] = "I'm sorry, I can't help you with that."

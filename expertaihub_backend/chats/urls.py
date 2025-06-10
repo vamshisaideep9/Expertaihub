@@ -4,9 +4,8 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     ChatSessionCreateView,
     ChatSessionStreamView,
-    ChatSessionRunView,
     ChatSessionViewSet,
-    ReactionUpsertView, access_request_approve, MessageFeedbackCreateView
+    ReactionUpsertView, access_request_approve, MessageFeedbackCreateView, ChatMessageDetail
 )
 
 app_name = "chats"
@@ -30,8 +29,8 @@ urlpatterns = [
     ),
     path("sessions/<slug:slug>/stream",  ChatSessionStreamView.as_view(), name="chat-session-stream-noslash"),
     path("sessions/<slug:slug>/stream/",  ChatSessionStreamView.as_view(), name="chat-session-stream"),
-    path("sessions/<slug:slug>/heartbeat", ChatSessionStreamView.as_view(), name="chat-session-heartbeat"),
-    path("sessions/<slug:slug>/run/", ChatSessionRunView.as_view(), name="chat-session-run"),
+    # path("sessions/<slug:slug>/heartbeat", ChatSessionStreamView.as_view(), name="chat-session-heartbeat"),
+    # path("sessions/<slug:slug>/run/", ChatSessionRunView.as_view(), name="chat-session-run"),
     
     path(
       "sessions/<slug:slug>/messages/<int:message_id>/react/",
@@ -49,6 +48,11 @@ urlpatterns = [
       "sessions/<slug:slug>/messages/<int:msg_id>/feedback/",
       MessageFeedbackCreateView.as_view(),
       name="message-feedback-create",
+    ),
+    path(
+        "sessions/<slug:slug>/messages/<int:message_id>/",
+        ChatMessageDetail.as_view(),
+        name="chatmessage-detail"
     ),
 
     # 2) Then all the viewset‐generated routes under /sessions/:

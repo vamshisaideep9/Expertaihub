@@ -307,7 +307,7 @@ export default function LibraryPage() {
                            className="flex-1 pr-4 cursor-pointer"
      onClick={() => router.push(`/library/${s.slug}/`)}
   >
-                        <h2 className="flex items-center font-semibold text-gray-900 mb-1 line-clamp-2">
+                        <h2 className="font-medium text-gray-900 mb-2 line-clamp-2">
                           {s.pinned && <Pin className="w-4 h-4 mr-1"/>}
                           {firstQ}
                         </h2>

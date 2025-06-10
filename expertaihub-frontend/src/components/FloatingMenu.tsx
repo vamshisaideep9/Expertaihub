@@ -1,7 +1,7 @@
 // components/FloatingMenu.tsx
 "use client";
 
-import { ReactNode, useState, useLayoutEffect } from "react";
+import { ReactNode, useState, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   useFloating,
@@ -15,10 +15,12 @@ export function FloatingMenu({
   referenceElement,
   isOpen,
   children,
+  onClose,
 }: {
   referenceElement: HTMLElement | null;
   isOpen: boolean;
   children: ReactNode;
+  onClose?: () => void;
 }) {
   const [popperElement, setPopperElement] = useState<HTMLDivElement | null>(null);
 
@@ -32,6 +34,17 @@ export function FloatingMenu({
     whileElementsMounted: autoUpdate,
   });
 
+  // Close FloatingMenu on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (popperElement && !popperElement.contains(e.target as Node) && onClose) {
+        onClose();
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [popperElement, onClose]);
+
   if (!isOpen) return null;
 
   return createPortal(
@@ -43,6 +56,7 @@ export function FloatingMenu({
         left: x ?? 0,
         zIndex: 50,
       }}
+      onMouseDown={(e) => e.stopPropagation()} // prevents premature closure
       className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden"
     >
       {children}

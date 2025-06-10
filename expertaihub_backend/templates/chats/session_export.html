@@ -29,7 +29,6 @@
       height: 40px;
     }
     .title-container {
-      /* now explicitly Grotesk semibold with smoothing */
       font-family: "Space Grotesk", Arial, sans-serif;
       font-weight: 600;
       font-size: 2rem;
@@ -55,6 +54,26 @@
       font-size: 1.5rem;
       line-height: 1.6;
       margin-bottom: 2rem;
+    }
+
+    /* ─── Explicit Table Styles ──────────────────────────── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 2rem 0;
+      font-size: 1.2rem;
+      border: 1px solid #999;
+    }
+
+    th, td {
+      border: 1px solid #999;
+      padding: 0.5rem 1rem;
+      text-align: left;
+    }
+
+    th {
+      background-color: #fcfbf7;
+      font-weight: 600;
     }
   </style>
 </head>
@@ -82,4 +101,3 @@
   {% endfor %}
 </body>
 </html>
-
