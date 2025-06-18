@@ -11,6 +11,7 @@ class FAQQuestion(models.Model):
     Corpus of real / curated questions.
     """
     text       = models.TextField(unique=True)
+    embedding  = VectorField(dim=EMBED_DIM, null=True)
     tier       = models.CharField(max_length=20, default="free")  # free / pro / premium
     created_at = models.DateTimeField(auto_now_add=True)
 
