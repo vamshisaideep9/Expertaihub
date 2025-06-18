@@ -1,5 +1,9 @@
 from django.db import models
+from pgvector.django import VectorField
 from chats.models import ChatSession
+
+# dimensionality for all embedding vectors
+EMBED_DIM = 768
 
 # Create your models here.
 class FAQQuestion(models.Model):
@@ -27,6 +31,7 @@ class ChatSuggestion(models.Model):
         on_delete=models.CASCADE,
     )
     text     = models.CharField(max_length=500)
+    embedding = VectorField(dim=EMBED_DIM, null=True)
     rank     = models.PositiveSmallIntegerField()
     clicked  = models.BooleanField(default=False)
     created  = models.DateTimeField(auto_now_add=True)
