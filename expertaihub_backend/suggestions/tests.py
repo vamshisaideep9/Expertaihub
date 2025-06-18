@@ -43,3 +43,11 @@ class Top5RelatedTests(SimpleTestCase):
         self.assertEqual(results[0], "visa application process")
         self.assertIn("how to apply for a visa", results)
         self.assertLessEqual(len(results), 5)
+
+    def test_returns_empty_without_index(self):
+        utils.load_faq_vectorstore.cache_clear()
+        missing = Path(self.tmp.name) / "missing"
+        utils.INDEX_DIR = missing
+        results = utils.top5_related("visa application")
+        self.assertEqual(results, [])
+        utils.INDEX_DIR = Path(self.tmp.name)
