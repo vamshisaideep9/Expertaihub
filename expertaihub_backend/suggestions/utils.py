@@ -1,15 +1,31 @@
-from pgvector.django import CosineDistance
+from pathlib import Path
 
-from .models import FAQQuestion
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
 
 
-def top5_related(query_vec):
-    """Return up to five FAQ question texts closest to query_vec."""
-    qs = (
-        FAQQuestion.objects.annotate(
-            dist=CosineDistance("embedding", query_vec)
-        )
-        .order_by("dist")
-        .values_list("text", flat=True)[:5]
+INDEX_DIR = Path(__file__).resolve().parent / "vectorstores" / "free"
+
+_embedder = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2",
+    model_kwargs={"device": "cpu"},
+)
+
+
+def _load_index():
+    if not (INDEX_DIR / "index.faiss").exists():
+        return None
+    return FAISS.load_local(
+        str(INDEX_DIR),
+        _embedder,
+        allow_dangerous_deserialization=True,
     )
-    return list(qs)
+
+
+def top5_related(query_text):
+    """Return up to five FAQ question texts closest to query_text."""
+    index = _load_index()
+    if not index:
+        return []
+    docs = index.similarity_search(query_text, k=5)
+    return [d.page_content for d in docs]
