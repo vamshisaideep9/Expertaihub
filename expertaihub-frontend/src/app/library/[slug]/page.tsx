@@ -1248,7 +1248,7 @@ async function submitReaction(feedback?: { reason?: string; comments?: string })
         <div
           className={
             !isExpanded && tooLong
-              ? "text-2xl font-grotesk font-medium line-clamp-3 overflow-hidden"
+              ? "text-2xl font-grotesk font-medium line-clamp-2 overflow-hidden"
               : "text-2xl font-grotesk font-medium"
           }
         >

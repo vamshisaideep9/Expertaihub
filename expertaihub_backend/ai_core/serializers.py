@@ -11,4 +11,4 @@ class CountrySerializer(serializers.ModelSerializer):
     advisors = AdvisorSerializer(many=True, read_only=True) 
     class Meta:
         model = Country
-        fields = ["id", "name", "code", "is_active", "advisors"]
+        fields = ["id", "name", "is_active", "advisors"]

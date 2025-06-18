@@ -1,9 +1,11 @@
 import logging
 from types import GeneratorType
-from typing import Any, Dict
+from typing import Any, Dict, List
 import re
-from ai_core.llm.llm_client_free import ask_openai
-from ai_core.llm.llm_client_free import client
+from datetime import date
+from dateparser.search import search_dates
+
+from ai_core.llm.llm_client_free import ask_openai, client, DEFAULT_REASONING_EFFORT
 from ai_core.rag.retriever_free import get_retriever
 from ai_core.prompts.prompts import (
     rephrase_prompt,
@@ -11,48 +13,109 @@ from ai_core.prompts.prompts import (
     generate_response_prompt,
     safety_prompt,
 )
-from ai_core.llm.llm_client_free import DEFAULT_REASONING_EFFORT
 from ai_core.langgraph.memory import MemoryStore
 from langchain_core.memory import BaseMemory
 from langchain_core.messages import HumanMessage
 
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# CONSTANTS AND REGEX PATTERNS
+# =============================================================================
+
 VALID_INTENTS = {
     "greeting", "ask_form_info", "generate_form",
-    "state_law_query", "followup", "unclear", "not_in_docs"
+    "state_law_query", "followup", "simple_info", "summary",
+    "unclear", "not_in_docs"
 }
 
-
+# Intent detection patterns
 GENERATE_FORM_RE = re.compile(r"\b(generate|draft|pre-?fill|pre ?filled)\b", re.IGNORECASE)
-
 GREETING_RE = re.compile(
     r"^\s*(?:hi|hii|hiii|hello|hey|hola|greetings|good\s+(?:morning|afternoon|evening))\b",
     re.IGNORECASE
 )
 
-# ─── Memory Hooks ────────────────────────────────────────────────────────────
+SUMMARY_RE = re.compile(r"\b(summariz|brief|overview)\b", re.IGNORECASE)
+# Date parsing patterns
+BEFORE_RE = re.compile(r"\b(before|prior to|until)\b", re.IGNORECASE)
+AFTER_RE = re.compile(r"\b(since|after|from)\b", re.IGNORECASE)
+PAST_DATA_RE = re.compile(r"\b(past|historical|history|previous|before)\b", re.IGNORECASE)
+
+# Year range patterns
+YEAR_RANGE_RE = re.compile(r"\bfrom\s+(\d{4})\s*(?:to|[-–—])\s*(\d{4})\b", re.IGNORECASE)
+SIMPLE_YEAR_RANGE_RE = re.compile(r"\b(\d{4})\s*[-–—]\s*(\d{4})\b")
+
+# Safety patterns
+RISKY_PATTERN = re.compile(r"\b(overstay|expired visa|illegal|fake marriage|stay.*after.*visa|falsify|unlawful)\b", re.IGNORECASE)
+
+# =============================================================================
+# DATE PARSING FUNCTIONS
+# =============================================================================
+
+def parse_date_filter(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Parse date filters from the question and update state accordingly."""
+    q = state.get("question", "")
+    
+    # 1) Year–Year or "from YYYY to YYYY"
+    m = YEAR_RANGE_RE.search(q) or SIMPLE_YEAR_RANGE_RE.search(q)
+    if m:
+        y1, y2 = int(m.group(1)), int(m.group(2))
+        start, end = min(y1, y2), max(y1, y2)
+        state["start_date"] = f"{start:04d}-01-01"
+        state["end_date"] = f"{end:04d}-12-31"
+        return state
+
+    # 2) Full-date parsing
+    results = search_dates(q, settings={
+        "PREFER_DAY_OF_MONTH": "first", "STRICT_PARSING": True
+    }) or []
+    dates = sorted({dt.date() for _, dt in results})
+    if not dates:
+        return state
+
+    iso = dates[0].isoformat()
+    if BEFORE_RE.search(q):
+        state["end_date"] = iso
+    elif AFTER_RE.search(q):
+        state["start_date"] = iso
+    else:
+        # default to "since"
+        state["start_date"] = iso
+
+    return state
+
+# =============================================================================
+# MEMORY MANAGEMENT FUNCTIONS
+# =============================================================================
 
 def load_memory_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Load memory for the current session."""
     mem = MemoryStore.load_for(state["session_id"])
     state["memory"] = mem
     return state
 
 def add_user_message_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Add user message to chat memory."""
     state["memory"].chat_memory.add_user_message(state["question"])
     return state
 
 def add_ai_message_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Add AI message to chat memory."""
     state["memory"].chat_memory.add_ai_message(state["answer"])
     return state
 
 def save_memory_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Save memory for the current session."""
     MemoryStore.save_for(state["session_id"], state["memory"])
     return state
 
-# ─── NLP Nodes ───────────────────────────────────────────────────────────────
+# =============================================================================
+# NLP PROCESSING FUNCTIONS
+# =============================================================================
 
 def rephrase_input(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Rephrase user input for better processing."""
     raw = state["question"].strip()
     # Skip rephrase for very short or greeting inputs
     if len(raw.split()) < 3 or GREETING_RE.match(raw):
@@ -60,7 +123,7 @@ def rephrase_input(state: Dict[str, Any]) -> Dict[str, Any]:
         return state
 
     history = "\n".join(
-        f"{'User' if isinstance(m,HumanMessage) else 'AI'}: {m.content}"
+        f"{'User' if isinstance(m, HumanMessage) else 'AI'}: {m.content}"
         for m in state["memory"].chat_memory.messages
     )
     prompt_str = rephrase_prompt.format(history=history, question=raw)
@@ -69,45 +132,68 @@ def rephrase_input(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"[rephrase_input] → {state['clean_question']!r}")
     return state
 
-
-
 def detect_intent(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Detect the intent of the user's question."""
     raw_q = state["question"].strip()
     clean_q = state.get("clean_question", raw_q).strip()
+    mem = MemoryStore.load_for(state["session_id"])
 
-    # 1) Greeting on raw input
+    # ─── date overrides ──────────────────────────────────────────────────────
+    # 1) historical/past override → no recency cutoff
+    if PAST_DATA_RE.search(raw_q):
+        state["recency_days"] = None
+    else:
+        state.setdefault("recency_days", 365)
+
+    # 2) year-only range override → explicit start_date/end_date
+    m = YEAR_RANGE_RE.search(raw_q) or SIMPLE_YEAR_RANGE_RE.search(raw_q)
+    if m:
+        y1, y2 = int(m.group(1)), int(m.group(2))
+        start, end = min(y1, y2), max(y1, y2)
+        state["start_date"] = f"{start:04d}-01-01"
+        state["end_date"] = f"{end:04d}-12-31"
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # 3) Greeting shortcut
     if GREETING_RE.match(raw_q):
         state["intent"] = "greeting"
         return state
 
-    # 2) Generate form shortcut
+    # 4) Generate-form shortcut
     if GENERATE_FORM_RE.search(raw_q):
         state["intent"] = "generate_form"
         return state
+    
+    if SUMMARY_RE.search(raw_q):
+        state["intent"] = "summary"
+        return state
+    
+    if re.search(r"\b(fee|cost|price|charge)\b", raw_q, re.IGNORECASE):
+        state["intent"] = "simple_info"
+        return state
 
-    # 3) If the current question is < 5 words AND memory has valid immigration turns → followup
+    # 5) Very short follow-up
     if len(raw_q.split()) < 5:
-        prev_msgs = state["memory"].chat_memory.messages[-3:]  # check last 3 turns
-        if any("F-1" in m.content or "visa" in m.content or "Form AR-11" in m.content for m in prev_msgs):
+        last_msgs = mem.chat_memory.messages[-3:]
+        if any("visa" in m.content.lower() or "form ar-11" in m.content.lower()
+               for m in last_msgs):
             state["intent"] = "followup"
             return state
 
-    # 4) Else → Use LLM prompt to classify
+    # 6) LLM classification fallback
     history = "\n".join(
         f"{'User' if isinstance(m, HumanMessage) else 'AI'}: {m.content}"
-        for m in state["memory"].chat_memory.messages
+        for m in mem.chat_memory.messages
     )
-
     prompt_str = intent_prompt.format(history=history, question=clean_q)
     out = ask_openai(prompt_str, stream=False)
-    intent = out.strip().lower() if isinstance(out, str) else "".join(out).strip()
+    intent = (out.strip().lower() if isinstance(out, str)
+              else "".join(out).strip().lower())
     state["intent"] = intent if intent in VALID_INTENTS else "unclear"
     return state
 
-
-RISKY_PATTERN = re.compile(r"\b(overstay|expired visa|illegal|fake marriage|stay.*after.*visa|falsify|unlawful)\b", re.IGNORECASE)
-
 def safety_guard(state: dict) -> dict:
+    """Check if the question is safe to answer."""
     # 1) Short-circuit greetings
     if state.get("intent") == "greeting":
         state["is_safe"] = True
@@ -132,148 +218,64 @@ def safety_guard(state: dict) -> dict:
         state["is_safe"] = False
     return state
 
+# =============================================================================
+# CONTEXT RETRIEVAL AND PROCESSING
+# =============================================================================
+
 def retrieve_context(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Retrieve relevant context documents for the question."""
+    # 0) Apply any explicit date filters (year ranges, since/until, etc.)
+    state = parse_date_filter(state)
+
     state["used_retrieval"] = True
     query = state.get("clean_question", state.get("question", "")).strip()
-    
-    # Step 1: Load from FAISS
-    docs = get_retriever(
-        state.get("niche", "immigration"),
-        state.get("country", "usa"),
-        k=15
-    ).invoke(query)
 
-    # Step 2: Filter out empty chunks
+    # 1) Pull retrieval params out of state
+    niche = state.get("niche", "immigration")
+    country = state.get("country", "usa")
+    k = 15
+    recency_days = state.get("recency_days", 365)  # None → no cutoff
+    start_date = state.get("start_date", None)   # ISO str or None
+    end_date = state.get("end_date", None)     # ISO str or None
+
+    # 2) Instantiate the retriever with date windows & dedupe
+    retriever = get_retriever(
+        niche,
+        country,
+        k=k,
+        recency_days=recency_days,
+        dedupe=True,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    # 3) Fetch the top-k chunks
+    docs = retriever.get_relevant_documents(query)
+
+    # 4) Strip out empty text
     filtered = [d.page_content.strip() for d in docs if d.page_content.strip()]
     state["docs"] = filtered
 
-    # Step 3: Extract important words from the question
+    # 5) Keyword‐based relevance check (fallback to no‐retrieval if none match)
     stopwords = {"what", "in", "on", "at", "the", "a", "an", "for", "to", "of", "if", "about", "how", "do", "i"}
-    keywords = [word for word in re.findall(r"\b\w+\b", query.lower()) if word not in stopwords]
-
-    # Step 4: Check for relevance in any retrieved doc
-    found = any(any(kw in doc.lower() for kw in keywords) for doc in filtered)
+    keywords = [w for w in re.findall(r"\b\w+\b", query.lower()) if w not in stopwords]
+    found = any(any(kw in chunk.lower() for kw in keywords) for chunk in filtered)
 
     if not found:
-        # Manually force fallback node
         state["docs"] = []
         state["used_retrieval"] = False
-        logger.warning(f"[retrieve_context] No relevant keywords from question found in docs → triggering denial")
-    else:
-        logger.info(f"[retrieve_context] Matched keywords in retrieved docs")
-
-    return state
-
-def generate_response(state: Dict[str, Any]) -> Dict[str, Any]:
-    docs = state.get("docs", [])
-    if not docs:
-        logger.warning("[generate_response] No docs provided in state")
-        state["answer"] = ""
-        return state
-
-    history = "\n".join(
-        f"{'User' if isinstance(m, HumanMessage) else 'AI'}: {m.content}"
-        for m in state["memory"].chat_memory.messages
-    )
-
-    try:
-        prompt = generate_response_prompt.format(
-            history=history,
-            context="\n\n".join(docs),
-            question=state["question"],
-            form_name=""  # Default empty string for form_name
+        logger.warning(
+            "[retrieve_context] No keywords matched in retrieved docs → triggering denial"
         )
-        logger.debug(f"[generate_response] Prompt length: {len(prompt)} chars")
-        
-        # 👇  **call the LLM here**  (max-tokens & model come from ask_openai helper)
-        try:
-            completion = ask_openai( prompt, stream=False)
-            logger.debug(f"[generate_response] Raw completion type: {type(completion)}")
-            
-            if isinstance(completion, str):
-                answer = completion.strip()
-            elif isinstance(completion, (list, GeneratorType)):
-                answer = "".join(completion).strip()
-            else:
-                logger.error(f"[generate_response] Unexpected completion type: {type(completion)}")
-                answer = "I'm sorry, I could not generate a proper answer right now."
-                
-            if not answer:
-                logger.error("[generate_response] Empty answer received from LLM")
-                answer = "I'm sorry, I received an empty response. Please try asking your question again."
-                
-        except Exception as e:
-            logger.error(f"[generate_response] LLM completion error: {str(e)}", exc_info=True)
-            answer = "I'm sorry, I encountered an error while generating the answer. Please try again."
-            
-    except Exception as e:
-        logger.error(f"[generate_response] Prompt formatting error: {str(e)}", exc_info=True)
-        answer = "I'm sorry, I encountered an error while processing your question. Please try again."
-
-    state["answer"] = answer
-    logger.info(f"[generate_response] final_chars={len(answer)}")
-    return state
-
-def generate_document(state: Dict[str, Any]) -> Dict[str, Any]:
-    q = (state.get("clean_question") or "").lower()
-    if "ar-11" in q or "address change" in q:
-        state["answer"] = "Form-drafting is a Pro+ feature. Upgrade to Pro for pre-filled forms."
     else:
-        state["answer"] = "Document generation coming soon."
+        logger.info("[retrieve_context] Keywords matched in retrieved docs")
+
     return state
-
-def clarify_question(state: Dict[str, Any]) -> Dict[str, Any]:
-    state["answer"] = "Could you please clarify what you mean?"
-    return state
-
-def greet_user(state: Dict[str, Any]) -> Dict[str, Any]:
-    from ai_core.llm.llm_client_free import ask_openai
-
-    raw = state.get("question", "").strip()
-    # Build a mini prompt to steer the model toward a friendly greeting
-    prompt = (
-        "You are a friendly U.S. immigration virtual assistant. "
-        "The user just said: \"{user_input}\". "
-        "Reply with a brief, engaging greeting that confirms you’re ready to help with their immigration question—no extra explanation.\n\n"
-        "Assistant:"
-    ).format(user_input=raw)
-
-    try:
-        # ask_openai returns either a string or list; coerce to string
-        resp = ask_openai(prompt, stream=False)
-        answer = resp if isinstance(resp, str) else "".join(resp)
-        state["answer"] = answer.strip()
-    except Exception as e:
-        # Fallback to a safe default
-        state["answer"] = "👋 Hello! How can I assist you with your immigration question today?"
-    return state
-
-
-def deny_answer_confidently(state: Dict[str, Any]) -> Dict[str, Any]:
-    state["answer"] = "I'm sorry, I can't help you with that."
-    return state
-
-def log_query(state: Dict[str, Any]) -> Dict[str, Any]:
-    # e.g. analytics or DB writes
-    return state
-
-
-
-# ai_core/langgraph/nodes/summary_nodes.py
-
-import logging
-import tiktoken
-from ai_core.llm.llm_client_free import ask_openai
-from typing import Dict, List
-
-logger = logging.getLogger(__name__)
-
-# Be more aggressive:
-MAX_CONTEXT_TOKENS = 4000
-SUMMARY_TARGET_TOKENS = 500
 
 def count_tokens(text: str, model: str = "gpt-3.5-turbo") -> int:
+    """Count tokens in text using tiktoken."""
     try:
+        import tiktoken
         enc = tiktoken.encoding_for_model(model)
         return len(enc.encode(text))
     except Exception:
@@ -302,12 +304,12 @@ def summarize_context(state: Dict) -> Dict:
         remainder = "\n\n---\n\n".join(overflow_for_summary)
         summary_prompt = (
             "You are a concise U.S. immigration assistant. Summarize the following excerpts into "
-            f"around {SUMMARY_TARGET_TOKENS} tokens, focusing on key steps, deadlines, and compliance notes:\n\n"
+            f"around 500 tokens, focusing on key steps, deadlines, and compliance notes:\n\n"
             f"{remainder}\n\n**Summary:**"
         )
 
         try:
-            resp = ask_openai(summary_prompt, max_tokens=SUMMARY_TARGET_TOKENS, stream=False)
+            resp = ask_openai(summary_prompt, max_tokens=500, stream=False)
             summary_text = resp.strip() if isinstance(resp, str) else "".join(resp).strip()
         except Exception as e:
             logger.error(f"[summarize_context] LLM summarization failed: {e}", exc_info=True)
@@ -324,4 +326,166 @@ def summarize_context(state: Dict) -> Dict:
         f"[summarize_context] kept={len(kept)} raw chunks, "
         f"summary_included={'yes' if summary_text else 'no'}"
     )
+    return state
+
+# =============================================================================
+# RESPONSE GENERATION FUNCTIONS
+# =============================================================================
+
+def generate_response(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate a response based on retrieved context."""
+    # 1) Pick the best context: trimmed if available, else full docs
+    docs: List[str] = state.get("trimmed_docs") or state.get("docs", [])
+    if not docs:
+        logger.warning("[generate_response] No context documents available")
+        state["answer"] = ""
+        return state
+
+    # 2) Build chat history
+    mem = MemoryStore.load_for(state["session_id"])
+    history = "\n".join(
+        f"{'User' if isinstance(m, HumanMessage) else 'AI'}: {m.content}"
+        for m in mem.chat_memory.messages
+    )
+
+    # 3) Build the prompt
+    prompt = generate_response_prompt.format(
+        history=history,
+        context="\n\n".join(docs),
+        question=state["question"],
+        form_name=state.get("form_name", "")
+    )
+    logger.debug(f"[generate_response] Prompt ({len(prompt)} chars)")
+
+    try:
+        # 4) Call the LLM
+        completion = ask_openai(prompt, stream=False)
+        if isinstance(completion, str):
+            answer_body = completion.strip()
+        elif isinstance(completion, (list, GeneratorType)):
+            answer_body = "".join(completion).strip()
+        else:
+            logger.error(f"[generate_response] Unexpected completion type: {type(completion)}")
+            answer_body = "I'm sorry, I couldn't generate a proper answer right now."
+
+        if not answer_body:
+            raise ValueError("Received empty answer from LLM")
+
+    except Exception as e:
+        logger.error(f"[generate_response] LLM error: {e}", exc_info=True)
+        answer_body = "I'm sorry, I encountered an error while generating the answer. Please try again."
+    full_answer = f"{answer_body}"
+
+    state["answer"] = full_answer
+    logger.info(f"[generate_response] Answer length={len(full_answer)} chars")
+    return state
+
+def generate_document(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate a document based on the request."""
+    q = (state.get("clean_question") or "").lower()
+    if "ar-11" in q or "address change" in q:
+        state["answer"] = "Form-drafting is a Pro+ feature. Upgrade to Pro for pre-filled forms."
+    else:
+        state["answer"] = "Document generation coming soon."
+    return state
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+
+def clarify_question(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Ask for clarification when the question is unclear."""
+    state["answer"] = "Could you please clarify what you mean?"
+    return state
+
+
+def generate_summary(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Very brief summary when user asks to summarize."""
+    docs = state.get("docs", [])
+    if not docs:
+        state["answer"] = "Sorry, I don't have anything to summarize."
+        return state
+
+    # Join all docs into one blob for summary prompt
+    blob = "\n\n---\n\n".join(docs)
+    prompt = (
+        "## Summary\n\n"
+        "Please write a concise (2–4 sentence) summary of these excerpts:\n\n"
+        f"{blob}"
+    )
+    try:
+        resp = ask_openai(prompt, stream=False)
+        summary = resp if isinstance(resp, str) else "".join(resp)
+        state["answer"] = summary.strip()
+    except Exception:
+        state["answer"] = "Sorry, I couldn't generate a summary right now."
+    return state
+
+from datetime import date
+
+def simple_response(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Use the LLM to give a concise multi‐sentence answer for single‐item queries (fees, costs)."""
+    question = state.get("question", "").strip()
+    docs     = state.get("docs", [])
+
+    # Build prompt: include up to 3 chunks if available, else fall back to direct
+    if docs:
+        context = "\n\n".join(docs[:3])
+        prompt = (
+            "You are a friendly U.S. immigration assistant.\n\n"
+            f"Context:\n{context}\n\n"
+            f"User question: \"{question}\"\n\n"
+            "Based on the above, provide a concise 2–3 sentence answer "
+            "specifically about the filing fee and any immediate payment instructions.\n\n"
+            "Answer:"
+        )
+    else:
+        today = date.today().isoformat()
+        prompt = (
+            "You are a knowledgeable U.S. immigration assistant.\n\n"
+            f"As of {today}, what is the current filing fee for Form I-485 and how should it be paid? "
+            "Answer in 2–3 sentences.\n\n"
+            "Answer:"
+        )
+
+    try:
+        resp   = ask_openai(prompt, stream=False)
+        answer = resp if isinstance(resp, str) else "".join(resp)
+        state["answer"] = answer.strip()
+    except Exception as e:
+        logger.error(f"[simple_response] LLM error: {e}", exc_info=True)
+        state["answer"] = "Sorry, I couldn't retrieve the fee information at the moment."
+
+    return state
+
+
+def greet_user(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate a greeting response."""
+    raw = state.get("question", "").strip()
+    # Build a mini prompt to steer the model toward a friendly greeting
+    prompt = (
+        "You are a friendly U.S. immigration virtual assistant. "
+        "The user just said: \"{user_input}\". "
+        "Reply with a brief, engaging greeting that confirms you're ready to help with their immigration question—no extra explanation.\n\n"
+        "Assistant:"
+    ).format(user_input=raw)
+
+    try:
+        # ask_openai returns either a string or list; coerce to string
+        resp = ask_openai(prompt, stream=False)
+        answer = resp if isinstance(resp, str) else "".join(resp)
+        state["answer"] = answer.strip()
+    except Exception as e:
+        # Fallback to a safe default
+        state["answer"] = "👋 Hello! How can I assist you with your immigration question today?"
+    return state
+
+def deny_answer_confidently(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Deny answering the question."""
+    state["answer"] = "I'm sorry, I can't help you with that."
+    return state
+
+def log_query(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Log the query for analytics or database writes."""
+    # e.g. analytics or DB writes
     return state

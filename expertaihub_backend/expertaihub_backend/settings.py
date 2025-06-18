@@ -119,6 +119,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:3001",
     "http://127.0.0.1:8000",
+    "http://localhost:3002",
     # Add your production frontend URL here when deploying
     # "https://your-production-domain.com"
 ]
@@ -270,10 +271,10 @@ LOGGING = {
         },
     },
     "loggers": {
-        # Catch INFO+ from your memory & node modules
+        # Your existing loggers
         "ai_core.langgraph.nodes.nodes": {
             "handlers": ["console"],
-            "level": "INFO",        # or "DEBUG" to see even more
+            "level": "INFO",
             "propagate": False,
         },
         "ai_core.langgraph.memory": {
@@ -286,8 +287,13 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
+        # New logger for the free‐tier build command
+        "ai_core.management.commands.build_vector_store_free": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
     },
-    # Optionally bump root to INFO so you see all your logger.info calls
     "root": {
         "handlers": ["console"],
         "level": "WARNING",

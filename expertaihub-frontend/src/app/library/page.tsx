@@ -66,7 +66,7 @@ type Session = {
   updated: string;
   completed: boolean; 
   advisor_detail: { name: string };
-  country_detail: { name: string; code: string };
+  country_detail: { name: string };
   messages: Message[];
 };
 

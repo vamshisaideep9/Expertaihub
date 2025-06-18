@@ -7,7 +7,6 @@ from django.db.models import JSONField
 
 class Country(models.Model):
     name = models.CharField(max_length=100)
-    code = models.CharField(max_length=10, null=True, blank=True)
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
@@ -35,37 +34,47 @@ class Advisor(models.Model):
         return self.name
     
 
-
-
 class RawDocument(models.Model):
-    source_path = models.TextField()    # e.g. "documents/immigration/usa/ice/family_residential/FRS-2020.pdf"
-    category    = models.TextField()    # e.g. "ice/family_residential"
-    filename    = models.CharField(max_length=255)
-    content     = models.TextField()    # the full extracted text (or a chunk)
-    metadata    = JSONField(default=dict)
-    created_at  = models.DateTimeField(auto_now_add=True)
+    source_path = models.TextField(help_text="Relative path under documents/…")
+    category = models.TextField(help_text="High-level folder/category")
+    filename = models.CharField(max_length=255)
+    content = models.TextField(help_text="The full extracted text of the document")
+    metadata = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # New fields for long-term filtering
+    advisor = models.ForeignKey(
+        Advisor,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="raw_documents"
+    )
+    country = models.ForeignKey(
+        Country,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="raw_documents"
+    )
 
     def __str__(self):
-        return f"{self.category}/{self.filename} ({self.pk})"
-    
-
-
-
+        return f"{self.category}/{self.filename} (#{self.pk})"
 
 class DocumentChunk(models.Model):
-    raw_document   = models.ForeignKey(RawDocument, on_delete=models.CASCADE, related_name="chunks")
-    chunk_index    = models.IntegerField()
-    text           = models.TextField()
-    metadata       = JSONField()
-    created_at     = models.DateTimeField(auto_now_add=True)
+    raw_document = models.ForeignKey(
+        RawDocument,
+        on_delete=models.CASCADE,
+        related_name="chunks"
+    )
+    chunk_index = models.IntegerField(help_text="Zero-based index of this chunk")
+    text = models.TextField(help_text="The chunk’s plain-text content")
+    metadata = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = ("raw_document", "chunk_index")
-        indexes = [
-            models.Index(fields=["raw_document", "chunk_index"]),
-        ]
+        indexes = [models.Index(fields=["raw_document", "chunk_index"])]
 
     def __str__(self):
         return f"Chunk {self.chunk_index} of {self.raw_document.filename}"
-
-

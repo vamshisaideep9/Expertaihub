@@ -8,441 +8,366 @@ import calendar
 from datetime import date
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
+from openai import OpenAI
+import re
 
 # Load environment variables from .env
 load_dotenv()
 
-@shared_task
-def fetch_uscode_title8_pdf():
-    """
-    Download US Code Title 8 PDF via GovInfo’s API endpoint,
-    using API key from .env, and save to:
-      <project_root>/documents/immigration/usa/uscode/<YYYY_MM>/USCODE-2023-title8.pdf
-    """
-    # 1) Build target path
-    today   = date.today()
-    stamp   = f"{today.year}_{today.month:02d}"
-    base    = settings.DOCS_DIR
-    target  = os.path.join(base, "uscode", stamp)
-    os.makedirs(target, exist_ok=True)
-
-    # 2) Get API key and download
-    api_key = os.getenv("GOVINFO_KEY")
-    if not api_key:
-        raise RuntimeError("GOVINFO_KEY not set in .env")
-    url     = f"https://api.govinfo.gov/packages/USCODE-2023-title8/pdf?api_key={api_key}"
-    r       = requests.get(url, stream=True)
-    r.raise_for_status()
-    if "pdf" not in r.headers.get("Content-Type", "").lower():
-        raise RuntimeError(f"Expected PDF but got {r.headers.get('Content-Type')}")
-
-    # 3) Write to disk
-    out_path = os.path.join(target, "USCODE-2023-title8.pdf")
-    with open(out_path, "wb") as f:
-        for chunk in r.iter_content(8192):
-            if chunk:
-                f.write(chunk)
-
-    return f"Saved USCODE-2023-title8.pdf to {out_path}"
-
-
-@shared_task
-def fetch_cfr_title8_vol1_pdf():
-    """
-    Download CFR Title 8 Vol 1 PDF via GovInfo’s API endpoint,
-    using API key from .env, and save to:
-      <project_root>/documents/immigration/usa/cfr/<YYYY_MM>/CFR-2023-title8-vol1.pdf
-    """
-    # 1) Build target path
-    today   = date.today()
-    stamp   = f"{today.year}_{today.month:02d}"
-    base    = settings.DOCS_DIR
-    target  = os.path.join(base, "cfr", stamp)
-    os.makedirs(target, exist_ok=True)
-
-    # 2) Get API key and download
-    api_key = os.getenv("GOVINFO_KEY")
-    if not api_key:
-        raise RuntimeError("GOVINFO_KEY not set in .env")
-    url     = f"https://api.govinfo.gov/packages/CFR-2023-title8-vol1/pdf?api_key={api_key}"
-    r       = requests.get(url, stream=True)
-    r.raise_for_status()
-    if "pdf" not in r.headers.get("Content-Type", "").lower():
-        raise RuntimeError(f"Expected PDF but got {r.headers.get('Content-Type')}")
-
-    # 3) Write to disk
-    out_path = os.path.join(target, "CFR-2023-title8-vol1.pdf")
-    with open(out_path, "wb") as f:
-        for chunk in r.iter_content(8192):
-            if chunk:
-                f.write(chunk)
-
-    return f"Saved CFR-2023-title8-vol1.pdf to {out_path}"
-
-
-
-@shared_task
-def fetch_federal_register_notices():
-    """
-    Download all Federal Register “NOTICE” documents from the prior month:
-      1) Query the API for NOTICE docs published between first-of-last-month and first-of-this-month.
-      2) Save the JSON index and download each PDF into:
-         <project_root>/documents/immigration/usa/federal_register/<YYYY_MM>/
-    """
-    from datetime import date
-
-    today = date.today()
-    # first of this month
-    first_this = today.replace(day=1)
-    # compute last month
-    if first_this.month == 1:
-        prev_year, prev_month = first_this.year - 1, 12
-    else:
-        prev_year, prev_month = first_this.year, first_this.month - 1
-
-    start = date(prev_year, prev_month, 1).isoformat()
-    end   = first_this.isoformat()
-
-    # build target dir
-    stamp = f"{prev_year}_{prev_month:02d}"
-    base  = settings.DOCS_DIR
-    target = os.path.join(base, "federal_register", stamp)
-    os.makedirs(target, exist_ok=True)
-
-    # 1) fetch JSON index
-    api_url = "https://www.federalregister.gov/api/v1/documents"
-    params = {
-        "conditions[publication_date][gte]": start,
-        "conditions[publication_date][lt]": end,
-        "conditions[type]": "NOTICE",
-        "per_page": 100,
-        "order": "publication_date"
-    }
-    resp = requests.get(api_url, params=params)
-    resp.raise_for_status()
-    results = resp.json().get("results", [])
-
-    # save index
-    idx_path = os.path.join(target, "notices_index.json")
-    with open(idx_path, "w", encoding="utf-8") as jf:
-        jf.write(resp.text)
-
-    # 2) download each PDF
-    count = 0
-    for doc in results:
-        pdf = doc.get("pdf_url")
-        if not pdf:
-            continue
-        fn = os.path.basename(pdf)
-        out = os.path.join(target, fn)
-        if os.path.exists(out):
-            continue
-        p = requests.get(pdf, stream=True)
-        p.raise_for_status()
-        with open(out, "wb") as pf:
-            for chunk in p.iter_content(8192):
-                if chunk:
-                    pf.write(chunk)
-        count += 1
-
-    return f"Fetched {len(results)} notices ({count} PDFs) to {target}"
-
-
-
-
-@shared_task
-def fetch_visa_bulletin():
-    """
-    1) Build the URL for the current month’s Visa Bulletin.
-    2) Download the PDF and save to:
-       <project_root>/documents/immigration/usa/visa_bulletin/<YYYY_MM>/.
-    """
-    today   = date.today()
-    stamp   = f"{today.year}_{today.month:02d}"
-    base    = settings.DOCS_DIR
-    target  = os.path.join(base, "visa_bulletin", stamp)
-    os.makedirs(target, exist_ok=True)
-
-
-    month_name = calendar.month_name[today.month].lower()  #
-    url = (
-        f"https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin/"
-        f"{today.year}/visa-bulletin-for-{month_name}-{today.year}.html"
-    )
-
-    # 3️⃣ Scrape the page for the PDF link
-    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-    resp.raise_for_status()
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(resp.text, "html.parser")
-
-    link = soup.find("a", href=lambda h: h and h.endswith(".pdf"))
-    if not link:
-        raise RuntimeError(f"No PDF found on {url}")
-    href = link["href"]
-    pdf_url = href if href.startswith("http") else f"https://travel.state.gov{href}"
-
-    # 4️⃣ Download the PDF
-    fn      = os.path.basename(pdf_url)
-    outpath = os.path.join(target, fn)
-    dl = requests.get(pdf_url, stream=True)
-    dl.raise_for_status()
-    if "pdf" not in dl.headers.get("Content-Type", "").lower():
-        raise RuntimeError("Expected PDF content")
-    with open(outpath, "wb") as f:
-        for chunk in dl.iter_content(8192):
-            if chunk:
-                f.write(chunk)
-
-    return f"Saved Visa Bulletin {fn} to {outpath}"
-
-
-
-
-@shared_task
-def fetch_uscis_policy_manual():
-    """
-    Scrape the USCIS Policy Manual page for all chapter PDFs,
-    download any new ones into:
-      documents/immigration/usa/uscis_policy_manual/<YYYY_MM>/
-    """
-    from bs4 import BeautifulSoup
-    from datetime import date
-    import os, requests    
-    today   = date.today()
-    stamp   = f"{today.year}_{today.month:02d}"
-    base    = settings.DOCS_DIR
-    target  = os.path.join(base, "uscis_policy_manual", stamp)
-    os.makedirs(target, exist_ok=True)
-
-    # 1️⃣ fetch the landing page
-    url  = "https://www.uscis.gov/policy-manual"
-    resp = requests.get(url, headers={"User-Agent":"Mozilla/5.0"})
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-
-    # 2️⃣ find all .pdf links
-    count = 0
-    for a in soup.select("a[href$='.pdf']"):
-        href = a["href"]
-        pdf_url = href if href.startswith("http") else f"https://www.uscis.gov{href}"
-        fn = os.path.basename(pdf_url)
-        out = os.path.join(target, fn)
-        if os.path.exists(out):
-            continue
-        # 3️⃣ download
-        dl = requests.get(pdf_url, stream=True)
-        dl.raise_for_status()
-        with open(out, "wb") as f:
-            for chunk in dl.iter_content(8192):
-                if chunk:
-                    f.write(chunk)
-        count += 1
-
-    return f"Downloaded {count} USCIS Policy Manual PDFs to {target}"
-
-
-
-
-import os
-import requests
-from celery import shared_task
-from django.conf import settings
-from bs4 import BeautifulSoup
-
-@shared_task
-def fetch_bia_precedent_volumes():
-    """
-    Download all EOIR Precedent Decisions PDFs from Volumes 08–29.
-    Each volume page at:
-      https://www.justice.gov/eoir/precedent-decisions-volume-XX
-    is scraped for *.pdf links and saved to:
-      <project>/documents/immigration/usa/bia_precedent_volumes/volume-XX/
-    """
-    base_dir = settings.DOCS_DIR
-    target_root = os.path.join(base_dir, "bia_precedent_volumes")
-    os.makedirs(target_root, exist_ok=True)
-
-    session = requests.Session()
-    session.headers.update({"User-Agent": "Mozilla/5.0"})
-
-    downloaded = 0
-
-    for vol in range(2, 22):  # 8 through 29 inclusive
-        vol_str = f"{vol}"
-        url = f"https://www.justice.gov/eoir/listing-volume-{vol_str}-decisions"
-        resp = session.get(url)
-        resp.raise_for_status()
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-        # find all PDF anchors
-        pdf_links = {
-            a["href"] if a["href"].startswith("http")
-            else f"https://www.justice.gov{a['href']}"
-            for a in soup.select("a[href$='.pdf']")
-        }
-
-        # prepare volume folder
-        vol_folder = os.path.join(target_root, f"listing-volume-{vol_str}")
-        os.makedirs(vol_folder, exist_ok=True)
-
-        for pdf_url in sorted(pdf_links):
-            fn = os.path.basename(pdf_url.split("?",1)[0])
-            out_path = os.path.join(vol_folder, fn)
-            if os.path.exists(out_path):
-                continue
-            dl = session.get(pdf_url, stream=True)
-            dl.raise_for_status()
-            with open(out_path, "wb") as f:
-                for chunk in dl.iter_content(8192):
-                    if chunk:
-                        f.write(chunk)
-            downloaded += 1
-
-    return f"Downloaded {downloaded} precedent PDFs across Volumes 08–29"
-
-
-
-@shared_task
-def fetch_immigration_law_advisor_pdfs():
-    """
-    Scrape https://www.justice.gov/eoir/immigration-law-advisor for all PDF links
-    and download them into:
-      <project_root>/documents/immigration/usa/immigration_law_advisor/<YYYY_MM>/
-    """
-    # 1) Prepare output directory
-    today  = date.today()
-    stamp  = f"{today.year}_{today.month:02d}"
-    base   = settings.DOCS_DIR
-    target = os.path.join(base, "immigration_law_advisor", stamp)
-    os.makedirs(target, exist_ok=True)
-
-    # 2) Fetch the Immigration Law Advisor page
-    url     = "https://www.justice.gov/eoir/immigration-law-advisor"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    resp    = requests.get(url, headers=headers)
-    resp.raise_for_status()
-    soup    = BeautifulSoup(resp.text, "html.parser")
-
-    # 3) Collect all PDF URLs
-    pdf_urls = set()
-    for a in soup.select("a[href$='.pdf']"):
-        href = a["href"]
-        if href.startswith("http"):
-            pdf_urls.add(href)
-        else:
-            pdf_urls.add("https://www.justice.gov" + href)
-
-    # 4) Download each PDF
-    downloaded = 0
-    for pdf_url in sorted(pdf_urls):
-        filename = os.path.basename(pdf_url.split("?", 1)[0])
-        out_path = os.path.join(target, filename)
-        if os.path.exists(out_path):
-            continue
-
-        dl = requests.get(pdf_url, headers=headers, stream=True)
-        dl.raise_for_status()
-        with open(out_path, "wb") as f:
-            for chunk in dl.iter_content(8192):
-                if chunk:
-                    f.write(chunk)
-        downloaded += 1
-
-    return f"Downloaded {downloaded} Immigration Law Advisor PDFs into {target}"
 
 
 # ai_core/tasks.py
 
-
-import pdfkit
-import json
-import logging
-
-
-logger = logging.getLogger(__name__)
+from celery import shared_task
+from django.conf import settings
+from datetime import date
+import calendar, os, requests
+from openai import OpenAI
 
 @shared_task
-def fetch_immigration_impact_texts(year: int = None, month: int = None, day: int = None):
+def fetch_visa_bulletin():
     """
-    Fetch Immigration Impact articles for a given date (or today if none passed).
-    Args (all optional):
-      year, month, day  – integers for the archive URL.
-    Extracts all <h1>–<h6> and <p> under .post-content.entry-content
-    and writes JSON to:
-      documents/immigration/usa/immigration_impact/YYYY_MM_DD/<slug>/article.json
+    1) Use OpenAI web search to locate the Visa Bulletin PDF link for this month.
+    2) Download the PDF and save to:
+       <project_root>/documents/immigration/usa/visa_bulletin/<YYYY_MM>/.
     """
-    # 1️⃣ Determine which date to use
-    if year and month and day:
-        d = date(year, month, day)
-    else:
-        d = date.today()
-
-    stamp = f"{d.year}_{d.month:02d}_{d.day:02d}"
-    base  = settings.DOCS_DIR
-    archive_url = f"https://immigrationimpact.com/{d.year}/{d.month:02d}/{d.day:02d}/"
-
-    headers = {"User-Agent": "Mozilla/5.0"}
+    today = date.today()
+    
+    # Try current month first
+    year = today.year
+    month = today.month
+    month_name = calendar.month_name[month]
+    
+    # If we're in the first week of the month, try previous month's bulletin
+    if today.day <= 7:
+        if month == 1:
+            year = today.year - 1
+            month = 12
+        else:
+            month = today.month - 1
+        month_name = calendar.month_name[month]
+    
+    stamp = f"{year}_{month:02d}"
+    
+    # First try direct URL pattern that State Department uses
+    base_url = "https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin"
+    direct_url = f"{base_url}/{year}/visa-bulletin-for-{month_name.lower()}-{year}.html"
+    
     try:
-        resp = requests.get(archive_url, headers=headers, timeout=30)
-        resp.raise_for_status()
-    except requests.exceptions.HTTPError:
-        logger.info(f"No archive for {stamp}, skipping")
-        return f"No archive for {stamp}"
+        # Try to get the HTML page first
+        resp = requests.get(direct_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+        if resp.status_code == 200:
+            # If we get the HTML page, look for the PDF link
+            soup = BeautifulSoup(resp.text, "html.parser")
+            pdf_link = soup.find("a", text=lambda t: t and "View as Printer Friendly PDF" in t)
+            if pdf_link and pdf_link.get("href"):
+                pdf_url = pdf_link["href"]
+                if not pdf_url.startswith("http"):
+                    pdf_url = f"https://travel.state.gov{pdf_url}"
+            else:
+                pdf_url = None
+        else:
+            pdf_url = None
     except Exception as e:
-        logger.error(f"Error fetching archive {archive_url}: {e}")
-        return f"Error fetching archive for {stamp}"
+        print(f"Failed to fetch direct URL {direct_url}: {e}")
+        pdf_url = None
+    
+    # If direct URL approach failed, try search
+    if not pdf_url:
+        # More flexible search query that includes variations
+        queries = [
+            f"site:travel.state.gov \"Visa Bulletin for {month_name} {year}\" filetype:pdf",
+            f"site:travel.state.gov \"{month_name} {year} Visa Bulletin\" filetype:pdf",
+            f"site:travel.state.gov \"Visa Bulletin {month_name} {year}\" filetype:pdf"
+        ]
+        
+        client = OpenAI()
+        
+        # Try each query variation
+        for query in queries:
+            try:
+                resp = client.responses.create(
+                    model="gpt-4.1",
+                    tools=[{"type": "web_search_preview", "search_context_size": "low"}],
+                    input=query
+                )
+                
+                # Search through the response
+                for item in resp.output:
+                    if item.type == "message":
+                        for node in item.content:
+                            for ann in getattr(node, "annotations", []):
+                                if ann.url.lower().endswith(".pdf"):
+                                    pdf_url = ann.url
+                                    break
+                            if pdf_url:
+                                break
+                    if pdf_url:
+                        break
+                        
+                if pdf_url:
+                    break
+                    
+            except Exception as e:
+                print(f"Search query '{query}' failed: {e}")
+                continue
+    
+    if not pdf_url:
+        raise RuntimeError(f"[Visa Bulletin] No PDF URL found for {month_name} {year} after trying direct URL and search queries")
+    
+    # Download the PDF
+    base = settings.DOCS_DIR
+    target = os.path.join(base, "visa_bulletin", stamp)
+    os.makedirs(target, exist_ok=True)
+    
+    filename = os.path.basename(pdf_url.split("?", 1)[0])
+    outpath = os.path.join(target, filename)
+    
+    try:
+        dl = requests.get(pdf_url, stream=True, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+        dl.raise_for_status()
+        if "pdf" not in dl.headers.get("Content-Type", "").lower():
+            raise RuntimeError(f"[Visa Bulletin] Expected PDF but got {dl.headers.get('Content-Type')}")
+        
+        with open(outpath, "wb") as f:
+            for chunk in dl.iter_content(8192):
+                if chunk:
+                    f.write(chunk)
+                    
+        return f"Saved Visa Bulletin {filename} to {outpath}"
+        
+    except Exception as e:
+        raise RuntimeError(f"[Visa Bulletin] Failed to download PDF: {e}")
 
+from datetime import datetime
+
+@shared_task
+def fetch_uscis_policy_manual():
+    """
+    1) Fetch https://www.uscis.gov/policy-manual
+    2) Parse the "Current as of" date on the page
+    3) If that date's PDF isn't already downloaded, find the PDF link
+       and save it under:
+         <DOCS_DIR>/uscis_policy_manual/<YYYY_MM_DD>/USCIS_Policy_Manual_<YYYY_MM_DD>.pdf
+    """
+    base_url = "https://www.uscis.gov/policy-manual"
+    resp = requests.get(base_url, headers={"User-Agent":"Mozilla/5.0"}, timeout=30)
+    resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    # Tighten selector to just the article previews
-    article_links = {
-        (a["href"] if a["href"].startswith("http")
-         else "https://immigrationimpact.com" + a["href"])
-        for a in soup.select("h2.post-title a[href]")
-    }
+    # ── 1) Parse the "Current as of" line
+    date_str = None
+    
+    # Try multiple selectors for the date
+    selectors = [
+        ".field--name-field-display-date .field__item time",
+        ".field--name-field-display-date",
+        ".field__item time",
+        "time[datetime]",
+        ".current-as-of"
+    ]
+    
+    for selector in selectors:
+        date_el = soup.select_one(selector)
+        if date_el:
+            # Try to get datetime attribute first (ISO 8601 format)
+            date_str = date_el.get('datetime', '').strip()
+            if not date_str:
+                # Fall back to text content
+                date_str = date_el.get_text(strip=True)
+            if date_str:
+                break
+    
+    # If no date found in structured elements, try text search
+    if not date_str:
+        # Look for text containing "Current as of" or similar phrases
+        date_texts = [
+            "Current as of",
+            "Last Updated",
+            "Updated",
+            "Published"
+        ]
+        for text in date_texts:
+            date_el = soup.find(text=lambda t: t and text in t)
+            if date_el:
+                # Extract the date part after the label
+                parts = date_el.split(text, 1)
+                if len(parts) > 1:
+                    date_str = parts[1].strip()
+                    break
+    
+    # If still no date found, try to find any date-like text
+    if not date_str:
+        # Look for text that matches common date patterns
+        date_patterns = [
+            r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b',
+            r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}\b'
+        ]
+        for pattern in date_patterns:
+            matches = re.findall(pattern, soup.get_text())
+            if matches:
+                date_str = matches[0]
+                break
 
-    if not article_links:
-        logger.info(f"No articles found on {archive_url}")
-        return f"No articles for {stamp}"
+    if not date_str:
+        # If we still can't find a date, use today's date as a fallback
+        from datetime import date
+        today = date.today()
+        date_str = today.strftime("%B %d, %Y")
+        print(f"Warning: Could not find date on page, using today's date: {date_str}")
 
-    processed = 0
-    for link in sorted(article_links):
-        slug = link.rstrip("/").split("/")[-1]
-        out_dir = os.path.join(base, "immigration_impact", stamp, slug)
-        os.makedirs(out_dir, exist_ok=True)
+    try:
+        # Try different date formats
+        date_formats = [
+            "%Y-%m-%dT%H:%M:%SZ",  # ISO 8601 with Z timezone (2025-06-06T12:00:00Z)
+            "%Y-%m-%dT%H:%M:%S%z", # ISO 8601 with timezone offset
+            "%Y-%m-%dT%H:%M:%S",   # ISO 8601 without timezone
+            "%Y-%m-%d",            # ISO date only
+            "%B %d, %Y",           # June 6, 2025
+            "%B %d %Y",            # June 6 2025
+            "%b %d, %Y",           # Jun 6, 2025
+            "%b %d %Y",            # Jun 6 2025
+            "%m/%d/%Y",            # 06/06/2025
+            "%d/%m/%Y"             # 06/06/2025
+        ]
+        
+        dt = None
+        for fmt in date_formats:
+            try:
+                dt = datetime.strptime(date_str, fmt)
+                break
+            except ValueError:
+                continue
+                
+        if not dt:
+            # If all formats fail, try parsing just the date part from ISO format
+            if 'T' in date_str:
+                try:
+                    date_only = date_str.split('T')[0]
+                    dt = datetime.strptime(date_only, "%Y-%m-%d")
+                except ValueError:
+                    pass
+                    
+        if not dt:
+            raise ValueError(f"Could not parse date string: {date_str}")
+            
+        stamp = dt.strftime("%Y_%m_%d")
+    except Exception as e:
+        raise RuntimeError(f"Failed to parse date '{date_str}': {e}")
 
-        try:
-            art = requests.get(link, headers=headers, timeout=30)
-            art.raise_for_status()
-        except Exception as e:
-            logger.error(f"Failed to fetch {link}: {e}")
-            continue
+    # ── 2) Skip if already have this version
+    target_dir = os.path.join(settings.DOCS_DIR, "uscis_policy_manual", stamp)
+    if os.path.exists(target_dir):
+        return f"No new update (already have {stamp})"
+    os.makedirs(target_dir, exist_ok=True)
 
-        page = BeautifulSoup(art.text, "html.parser")
-        content = page.select_one("article .post-content.entry-content")
-        if not content:
-            logger.warning(f"No content at {link}")
-            continue
+    # ── 3) Locate the PDF link on the page
+    # Try multiple methods to find the PDF link
+    pdf_link = None
+    
+    # Method 1: Direct PDF links
+    pdf_link = soup.find("a", href=lambda h: h and h.lower().endswith(".pdf"))
+    
+    # Method 2: Links containing specific text
+    if not pdf_link:
+        pdf_link = soup.find("a", text=lambda t: t and any(x in t for x in ["Policy Manual", "PDF", "Download"]))
+    
+    # Method 3: Links in specific sections
+    if not pdf_link:
+        for section in soup.find_all(["div", "section"], class_=lambda c: c and any(x in str(c).lower() for x in ["download", "pdf", "manual"])):
+            pdf_link = section.find("a", href=True)
+            if pdf_link:
+                break
+    
+    if not pdf_link:
+        raise RuntimeError("No PDF download link found on USCIS page")
+    
+    pdf_href = pdf_link["href"]
+    pdf_url = pdf_href if pdf_href.startswith("http") else urljoin(base_url, pdf_href)
 
-        elements = []
-        for el in content.find_all(["h1","h2","h3","h4","h5","h6","p"]):
-            text = el.get_text(strip=True)
-            if text:
-                elements.append({"tag": el.name, "text": text})
+    # ── 4) Download and save
+    filename = f"USCIS_Policy_Manual_{stamp}.pdf"
+    outpath = os.path.join(target_dir, filename)
 
-        json_path = os.path.join(out_dir, "article.json")
-        with open(json_path, "w", encoding="utf-8") as jf:
-            json.dump({
-                "url": link,
-                "fetched_on": d.isoformat(),
-                "elements": elements
-            }, jf, ensure_ascii=False, indent=2)
+    try:
+        dl = requests.get(pdf_url, headers={"User-Agent":"Mozilla/5.0"}, stream=True, timeout=60)
+        dl.raise_for_status()
+        if "pdf" not in dl.headers.get("Content-Type", "").lower():
+            raise RuntimeError(f"Expected PDF, got {dl.headers.get('Content-Type')}")
 
-        processed += 1
+        with open(outpath, "wb") as f:
+            for chunk in dl.iter_content(8192):
+                if chunk:
+                    f.write(chunk)
 
-    return f"Saved text for {processed} articles on {stamp}"
+        return f"Downloaded USCIS Policy Manual ({stamp}) to {outpath}"
+    except Exception as e:
+        raise RuntimeError(f"Failed to download PDF: {e}")
 
+
+
+
+
+@shared_task
+def fetch_uscis_policy_memos():
+    """
+    Scrape USCIS Policy Memoranda (2019–present) across pages 0–16,
+    and download each PDF into:
+      <DOCS_DIR>/uscis_policy_manual/<YEAR>/
+    """
+    base_listing = "https://www.uscis.gov/laws-and-policy/policy-memoranda"
+    today        = date.today()
+    base_dir     = settings.DOCS_DIR
+    total        = 0
+
+    # iterate pages 0 (first) through 16
+    for page in range(17):
+        page_url = base_listing if page == 0 else f"{base_listing}?page={page}"
+        resp     = requests.get(page_url, headers={"User-Agent":"Mozilla/5.0"}, timeout=30)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Try table-based listing first
+        rows = (
+            soup.select("table.views-table tbody tr")
+            or soup.select(".views-row")
+        )
+
+        for row in rows:
+            # 1) extract the publication date text to get the year
+            date_cell = row.select_one(".views-field-field-publication-date")
+            if date_cell:
+                # e.g. "Jan. 5, 2019" → "2019"
+                year = date_cell.get_text(strip=True)[-4:]
+            else:
+                year = str(today.year)
+
+            # 2) find all PDF links in that row
+            for a in row.select("a[href$='.pdf']"):
+                href    = a["href"]
+                pdf_url = href if href.startswith("http") else urljoin(base_listing, href)
+                filename = os.path.basename(pdf_url.split("?", 1)[0])
+
+                # 3) build per-year folder
+                target = os.path.join(base_dir, "uscis_policy_memos", year)
+                os.makedirs(target, exist_ok=True)
+                outpth = os.path.join(target, filename)
+
+                # skip if already downloaded
+                if os.path.exists(outpth):
+                    continue
+
+                # 4) download & save
+                dl = requests.get(pdf_url, headers={"User-Agent":"Mozilla/5.0"}, stream=True, timeout=60)
+                dl.raise_for_status()
+                with open(outpth, "wb") as f:
+                    for chunk in dl.iter_content(8192):
+                        if chunk:
+                            f.write(chunk)
+
+                total += 1
+
+    return f"Downloaded {total} Policy Manual PDFs into {os.path.join(base_dir, 'uscis_policy_manual')}"
 
 
 
@@ -540,182 +465,185 @@ def fetch_all_uscis_form_pdfs():
     return f"Downloaded {downloaded} USCIS form PDFs into {os.path.join(settings.DOCS_DIR, 'forms')}"
 
 
-@shared_task
-def fetch_ca9_immigration_outline_pdfs():
-    """
-    Scrape https://www.ca9.uscourts.gov/guides/immigration-outline/ for PDF links
-    and download each into:
-      <PROJECT_ROOT>/documents/immigration/usa/federal_court_guides/ca9_immigration_outline/<YYYY_MM>/
-    """
-    # 1) Prepare output directory
-    today     = date.today()
-    stamp     = f"{today.year}_{today.month:02d}"
-    base      = settings.DOCS_DIR
-    target    = os.path.join(base, "federal_court_guides", "ca9_immigration_outline", stamp)
-    os.makedirs(target, exist_ok=True)
+# ai_core/tasks.py
 
-    # 2) Fetch the outline page
-    url     = "https://www.ca9.uscourts.gov/guides/immigration-outline/"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    resp    = requests.get(url, headers=headers, timeout=30)
-    resp.raise_for_status()
+import os
+import json
+import requests
+from datetime import datetime
+from urllib.parse import urljoin, urlparse
+from celery import shared_task
+from django.conf import settings
+from bs4 import BeautifulSoup
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-
-    # 3) Collect all PDF URLs
-    pdf_urls = set()
-    for a in soup.select("a[href$='.pdf']"):
-        href = a["href"]
-        if href.startswith("http"):
-            pdf_urls.add(href)
-        else:
-            # relative path on ca9 site
-            pdf_urls.add(requests.compat.urljoin(url, href))
-
-    # 4) Download each PDF
-    downloaded = 0
-    for pdf_url in sorted(pdf_urls):
-        filename = os.path.basename(pdf_url.split("?", 1)[0])
-        out_path = os.path.join(target, filename)
-        if os.path.exists(out_path):
-            continue
-        try:
-            dl = requests.get(pdf_url, headers=headers, stream=True, timeout=60)
-            dl.raise_for_status()
-            with open(out_path, "wb") as f:
-                for chunk in dl.iter_content(8192):
-                    if chunk:
-                        f.write(chunk)
-            downloaded += 1
-        except Exception as e:
-            # Optionally log with logger.error(...)
-            print(f"Failed to download {pdf_url}: {e}")
-
-    return f"Downloaded {downloaded} CA9 Immigration Outline PDFs into {target}"
-
-
+# where we store JSON outputs and state
+STATE_DIR   = os.path.join(settings.DOCS_DIR, "newsroom")
+STATE_FILE  = os.path.join(STATE_DIR, "fetched_urls.json")
+LISTING_URL = "https://www.uscis.gov/newsroom/news-releases"
 
 @shared_task
-def fetch_dhs_admin_management_pdfs():
+def fetch_uscis_news_releases():
     """
-    Scrape https://www.dhs.gov/publication/administrative-management
-    for all PDF links and download each into:
-      <PROJECT_ROOT>/documents/immigration/usa/administrative_management/<YYYY_MM>/
+    1) On first-ever run (empty state), scrape pages 0–9 of the USCIS News Releases listing
+       (LISTING_URL?page=0 through ?page=9) to get all past URLs.
+    2) On subsequent runs, scrape only page=0 to detect new releases.
+    3) For each URL not yet seen:
+         • scrape its <h1> + all <p> under <article>
+         • save as JSON under STATE_DIR/YYYY_MM_DD/<slug>.json
+         • record it in STATE_FILE
     """
-    # 1) Prepare output directory
-    today = date.today()
-    stamp = f"{today.year}_{today.month:02d}"
-    base = settings.DOCS_DIR
-    target = os.path.join(
-        base,
-        "immigration",
-        "usa",
-        "administrative_management",
-        stamp
-    )
-    os.makedirs(target, exist_ok=True)
+    # ── 0) load or initialize state
+    os.makedirs(STATE_DIR, exist_ok=True)
+    if os.path.exists(STATE_FILE):
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            state = json.load(f)
+    else:
+        state = {"fetched_urls": []}
 
-    # 2) Fetch the Administrative Management page
-    index_url = "https://www.dhs.gov/publication/workforce-management"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    resp = requests.get(index_url, headers=headers, timeout=30)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
+    # ── 1) decide which pages to scrape
+    if not state["fetched_urls"]:
+        pages = range(0, 10)      # seed run: pages 0–9
+    else:
+        pages = [0]               # subsequent runs: only latest page
 
-    # 3) Find all PDF links on the page
-    pdf_urls = set()
-    for a in soup.select("a[href$='.pdf']"):
-        href = a["href"]
-        # Some links may be protocol‐relative or relative
-        pdf_urls.add(requests.compat.urljoin(index_url, href))
+    # ── 2) collect candidate URLs
+    candidate_urls = []
+    for page in pages:
+        page_url = LISTING_URL if page == 0 else f"{LISTING_URL}?page={page}"
+        r = requests.get(page_url, headers={"User-Agent":"Mozilla/5.0"}, timeout=30)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        for a in soup.select("a[href*='/newsroom/news-releases/']"):
+            href = a["href"]
+            full = href if href.startswith("http") else urljoin(LISTING_URL, href)
+            candidate_urls.append(full)
+    # dedupe while preserving order
+    candidate_urls = list(dict.fromkeys(candidate_urls))
 
-    downloaded = 0
+    # ── 3) filter to new URLs
+    new_urls = [u for u in candidate_urls if u not in state["fetched_urls"]]
+    if not new_urls:
+        return "No new USCIS news releases found."
 
-    # 4) Download each PDF
-    for pdf_url in sorted(pdf_urls):
-        filename = os.path.basename(pdf_url.split("?", 1)[0])
-        out_path = os.path.join(target, filename)
-        if os.path.exists(out_path):
-            continue
+    # ── 4) scrape & save each new release
+    fetched = []
+    for url in new_urls:
+        resp = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=30)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
 
-        try:
-            dl = requests.get(pdf_url, headers=headers, stream=True, timeout=60)
-            dl.raise_for_status()
-            with open(out_path, "wb") as f:
-                for chunk in dl.iter_content(8192):
-                    if chunk:
-                        f.write(chunk)
-            downloaded += 1
-        except Exception as e:
-            # Optionally log the failure:
-            print(f"Failed to download {pdf_url}: {e}")
+        # title & paragraphs
+        title   = (soup.find("h1") or soup).get_text(strip=True)
+        article = soup.find("article") or soup
+        paras   = [p.get_text(strip=True) for p in article.find_all("p")]
 
-    return f"Downloaded {downloaded} Administrative Management PDFs into {target}"
+        # slug + timestamp
+        slug  = urlparse(url).path.rstrip("/").split("/")[-1]
+        stamp = datetime.utcnow().strftime("%Y_%m_%d")
+
+        out_dir  = os.path.join(STATE_DIR, stamp)
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, f"{slug}.json")
+
+        with open(out_path, "w", encoding="utf-8") as jf:
+            json.dump({
+                "url": url,
+                "fetched_on": datetime.utcnow().isoformat(),
+                "title": title,
+                "paragraphs": paras
+            }, jf, ensure_ascii=False, indent=2)
+
+        state["fetched_urls"].append(url)
+        fetched.append(url)
+
+    # ── 5) persist updated state
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+    return f"Fetched {len(fetched)} new releases: {fetched}"
 
 
 
-@shared_task(bind=True)
-def download_ice_nds2000_pdfs(self, base_url="https://www.ice.gov/foia/library", output_dir=None):
+
+# where we store JSON outputs and state for alerts
+ALERTS_DIR   = os.path.join(settings.DOCS_DIR, "alerts")
+ALERTS_STATE = os.path.join(ALERTS_DIR, "fetched_alert_urls.json")
+ALERTS_LIST  = "https://www.uscis.gov/newsroom/alerts"
+
+@shared_task
+def fetch_uscis_alerts():
     """
-    Scrape the ICE 2000 Detention Standards page for PDF links
-    and download each into `output_dir`.
+    1) On first run (empty state), scrape pages 0–19 of the USCIS Alerts listing
+       (ALERTS_LIST?page=0 through ?page=19) to seed all past URLs.
+    2) On subsequent runs, scrape only page=0 to detect new alerts.
+    3) For each URL not yet seen:
+         • scrape its <h1> + all <p> under <article>
+         • save as JSON under ALERTS_DIR/YYYY_MM_DD/<slug>.json
+         • record it in ALERTS_STATE
     """
-    output_dir = output_dir or os.path.join(os.getcwd(), "ice_nds2000_pdfs")
-    os.makedirs(output_dir, exist_ok=True)
+    # ── load or init state
+    os.makedirs(ALERTS_DIR, exist_ok=True)
+    if os.path.exists(ALERTS_STATE):
+        with open(ALERTS_STATE, "r", encoding="utf-8") as f:
+            state = json.load(f)
+    else:
+        state = {"fetched_urls": []}
 
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/114.0.0.0 Safari/537.36"
-        )
-    })
+    # ── choose pages to scrape
+    pages = range(0, 20) if not state["fetched_urls"] else [0]
 
-    logger.info(f"Fetching ICE 2000‐standards page: {base_url}")
-    resp = session.get(base_url, timeout=30)
-    resp.raise_for_status()
+    # ── collect candidate URLs
+    candidates = []
+    for page in pages:
+        url = ALERTS_LIST if page == 0 else f"{ALERTS_LIST}?page={page}"
+        r = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=30)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        for a in soup.select("a[href*='/newsroom/alerts/']"):
+            href = a["href"]
+            full = href if href.startswith("http") else urljoin(ALERTS_LIST, href)
+            candidates.append(full)
+    # dedupe
+    candidates = list(dict.fromkeys(candidates))
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    # ── filter new
+    new_urls = [u for u in candidates if u not in state["fetched_urls"]]
+    if not new_urls:
+        return "No new USCIS alerts found."
 
-    pdf_links = set()
-    for a in soup.find_all("a", href=True):
-        href = a["href"].strip()
-        if href.lower().endswith(".pdf"):
-            pdf_links.add(requests.compat.urljoin(base_url, href))
+    fetched = []
+    for alert_url in new_urls:
+        resp = requests.get(alert_url, headers={"User-Agent":"Mozilla/5.0"}, timeout=30)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
 
-    logger.info(f"Found {len(pdf_links)} unique PDF URLs")
+        # title and body
+        title_el = soup.find("h1")
+        title    = title_el.get_text(strip=True) if title_el else "No Title"
+        article  = soup.find("article") or soup
+        paragraphs = [p.get_text(strip=True) for p in article.find_all("p")]
 
-    downloaded = 0
-    for pdf_url in pdf_links:
-        filename = os.path.basename(pdf_url.split("?")[0])
-        target_path = os.path.join(output_dir, filename)
+        # derive slug and date
+        slug  = urlparse(alert_url).path.rstrip("/").split("/")[-1]
+        stamp = datetime.utcnow().strftime("%Y_%m_%d")
 
-        if os.path.exists(target_path):
-            logger.info(f"  → already have {filename}, skipping")
-            continue
+        out_dir  = os.path.join(ALERTS_DIR, stamp)
+        os.makedirs(out_dir, exist_ok=True)
+        out_file = os.path.join(out_dir, f"{slug}.json")
 
-        logger.info(f"  → downloading {filename} from {pdf_url}")
-        try:
-            with session.get(pdf_url, stream=True, timeout=60) as r:
-                r.raise_for_status()
-                with open(target_path, "wb") as f:
-                    for chunk in r.iter_content(32 * 1024):
-                        if chunk:
-                            f.write(chunk)
-            logger.info(f"     saved to {target_path}")
-            downloaded += 1
-        except Exception as e:
-            logger.error(f"     failed to download {pdf_url}: {e}")
+        with open(out_file, "w", encoding="utf-8") as jf:
+            json.dump({
+                "url": alert_url,
+                "fetched_on": datetime.utcnow().isoformat(),
+                "title": title,
+                "paragraphs": paragraphs
+            }, jf, ensure_ascii=False, indent=2)
 
-        # update Celery state
-        self.update_state(state="PROGRESS", meta={
-            "downloaded": downloaded,
-        })
+        state["fetched_urls"].append(alert_url)
+        fetched.append(alert_url)
 
-    logger.info(f"Task complete: downloaded {downloaded} PDFs to {output_dir}")
-    return {"downloaded": downloaded, "output_dir": output_dir}
+    # ── persist state
+    with open(ALERTS_STATE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
 
-
-
-
+    return f"Fetched {len(fetched)} new alerts: {fetched}"

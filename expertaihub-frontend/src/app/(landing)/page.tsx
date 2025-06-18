@@ -20,12 +20,12 @@ export default function LandingPage() {
   }, [isDark])
 
   const useCases = [
-    { title: "Immigration", icon: <Plane className="w-6 h-6 mb-3 text-primary" />, desc: "Apply for a UK Tier 2 visa as a healthcare worker.", active: true },
-    { title: "Legal Help", icon: <Gavel className="w-6 h-6 mb-3 text-muted-foreground" />, desc: "Generate a custody agreement for California family law.", active: false },
-    { title: "Tax & Compliance", icon: <ReceiptText className="w-6 h-6 mb-3 text-muted-foreground" />, desc: "Create a sales tax exemption letter for your Texas business.", active: false },
-    { title: "Grant Writing", icon: <Briefcase className="w-6 h-6 mb-3 text-muted-foreground" />, desc: "Write a GreenTech grant proposal under $100K.", active: false },
-    { title: "Education & Study", icon: <GraduationCap className="w-6 h-6 mb-3 text-muted-foreground" />, desc: "Get step-by-step help on Canadian student visa applications.", active: false },
-    { title: "Appeals & Forms", icon: <FileText className="w-6 h-6 mb-3 text-muted-foreground" />, desc: "Fill EOIR-29 appeals and other complex legal forms automatically.", active: false }
+    { title: "Immigration", icon: <Plane className="w-[20px] h-[20px] mb-[8px] text-primary" />, desc: "Apply for a UK Tier 2 visa as a healthcare worker.", active: true },
+    { title: "Legal Help", icon: <Gavel className="w-[20px] h-[20px] mb-[8px] text-muted-foreground" />, desc: "Generate a custody agreement for California family law.", active: false },
+    { title: "Tax & Compliance", icon: <ReceiptText className="w-6 h-6 mb-[8px] text-muted-foreground" />, desc: "Create a sales tax exemption letter for your Texas business.", active: false },
+    { title: "Grant Writing", icon: <Briefcase className="w-[20px] h-[20px] mb-[8px] text-muted-foreground" />, desc: "Write a GreenTech grant proposal under $100K.", active: false },
+    { title: "Education & Study", icon: <GraduationCap className="w-[20px] h-[20px] mb-[8px] text-muted-foreground" />, desc: "Get step-by-step help on Canadian student visa applications.", active: false },
+    { title: "Appeals & Forms", icon: <FileText className="w-[20px] h-[20px] mb-[8px] text-muted-foreground" />, desc: "Fill EOIR-29 appeals and other complex legal forms automatically.", active: false }
   ]
 
   const pricingPlans = [
@@ -35,48 +35,42 @@ export default function LandingPage() {
       features: [
         "🔢 15 queries / month",
         "📚 RAG Depth: 8 docs",
-        "🧠 Session Memory: in-session only",
-        "📝 Form Drafts: locked",
-        "⚠️ Compliance: basic safety & intent",
-        "💬 Support: community forum",
-        "📊 Analytics: none",
-        "🛠️ Early Access: none",
+        "🧠 In-session memory only",
+        "⚠️ Basic compliance checks",
+        "💬 Community support",
       ],
     },
     {
-      name: "Pro 🚀",
-      price: "$19 / mo",
+      name: "Plus 🌟",
+      price: "$9 / mo",
+      features: [
+        "🔢 100 queries / month",
+        "📚 RAG Depth: 12 docs",
+        "📝 AI-powered form drafting",
+        "🛠 Built-in templates & guides",
+        "💬 Email support (24 hr SLA)",
+      ],
+    },
+    {
+      name: "Pro+ 🚀",
+      price: "$29 / mo",
       features: [
         "🔢 Unlimited queries",
-        "📚 RAG Depth: 12 docs",
-        "🧠 Session Memory: 7-day summary",
-        "📝 Form Drafts: guide-style drafts",
-        "⚠️ Compliance: + clarifying questions",
-        "💬 Support: email (12 hr SLA)",
-        "📊 Analytics: usage dashboard",
-        "🛠️ Early Access: no",
+        "🤖 Legal Help Bot for case guidance",
+        "📊 Dedicated dashboard & analytics",
+        "🔍 Deep case-solving assistance",
+        "🚀 Early-access to new features",
       ],
     },
-    {
-      name: "Expert Templates 🧠",
-      price: "Earn with Us",
-      features: [
-        "🤖 Submit your own AI brain",
-        "💸 Earn 30% of revenue per use",
-        "📚 Add niche-specific expertise",
-        "🔒 Approval & compliance required",
-        "🧑‍⚖️ Reviewed by domain experts",
-      ],
-    },
-  ]
-
+  ];
+  
   return (
     <div className="min-h-screen bg-[#fcfbf7] text-foreground scroll-smooth">
-      <nav className="w-full flex items-center justify-between py-4 px-6 md:px-12 border-b border-muted">
+      <nav className="sticky top-0 z-[100] w-full flex items-center justify-between py-[12px] md:px-[24px] border-b border-muted bg-[#fcfbf7] shadow-sm">
         <Link href="/">
-          <span className="text-xl font-bold cursor-pointer">Expertaihub</span>
+          <span className="text-xl font-medium cursor-pointer font-cormorant">Expertaihub</span>
         </Link>
-        <div className="flex items-center space-x-4 text-muted-foreground text-sm">
+        <div className="flex items-center space-x-[18px] text-muted-foreground text-sm">
           {['Features','Use Cases','Pricing'].map(section => (
             <span
               key={section}
@@ -86,36 +80,38 @@ export default function LandingPage() {
               {section}
             </span>
           ))}
-          <Link href="/signin"><Button variant="outline" className="cursor-pointer">Signin</Button></Link>
+          <Link href="/signin"><Button variant="outline" className="cursor-pointer bg-[#fcfbf7]">Signin</Button></Link>
           <Link href="/signup"><Button className="cursor-pointer">Signup</Button></Link>
           <Button variant="ghost" className="cursor-pointer" size="icon" onClick={() => setIsDark(!isDark)}>
-            {isDark ? <Sun className="w-5 h-5 cursor-pointer" /> : <Moon className="w-5 h-5 cursor-pointer" />}
+            {isDark ? <Sun className="w-[20px] h-[20px] cursor-pointer" /> : <Moon className="w-[20px] h-[20px] cursor-pointer" />}
           </Button>
         </div>
       </nav>
 
-      <header className="max-w-5xl mx-auto text-center px-6 md:px-0 py-24">
-        <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-6">Expertaihub</h1>
-        <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto">
+      <header className="max-w-[500px] mx-auto text-center md:px-0 py-[12px]">
+      <h1 className="text-[65px] font-base text-center mb-[10px] font-cormorant">
+            Expertaihub
+          </h1>
+        <p className="text-[10px] md:text-[20px] text-muted-foreground mx-auto font-cormorant">
           Ultra-specialized AI advisors on demand. Accurate, local, and human-like expertise — without the consulting fees.
         </p>
       </header>
 
-      <main id="features" className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 px-6 md:px-0">
+      <main id="features" className="max-w-[990px] mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[25px]">
         {[
-          { icon: <Brain className="w-6 h-6 mb-3" />, title: "Expert-Brain Templates", desc: "AI advisors fine-tuned on domain-specific data — simulating how real experts think and solve problems." },
-          { icon: <Globe className="w-6 h-6 mb-3" />, title: "Locality-Aware Guidance", desc: "Answers personalized to your legal region or country, ensuring accuracy and relevance." },
-          { icon: <FileText className="w-6 h-6 mb-3" />, title: "Document Generator", desc: "Auto-generate immigration forms, appeal letters, tax notices, and more — editable and export-ready." },
-          { icon: <Bot className="w-6 h-6 mb-3" />, title: "Conversational UX", desc: "Feels like chatting with a human consultant — complete with memory, tone, and follow-ups." },
-          { icon: <FileSearch className="w-6 h-6 mb-3" />, title: "Explainability Engine", desc: "Breaks down complex terms and procedures into plain English — so you always understand the 'why'." },
-          { icon: <Layers className="w-6 h-6 mb-3" />, title: "Multi-Niche Coverage", desc: "Support for 500+ niches across immigration, finance, law, parenting, grants, and more." }
+          { icon: <Brain className="w-[20px] h-[20px] mb-[12px]" />, title: "Expert-Brain Templates", desc: "AI advisors fine-tuned on domain-specific data — simulating how real experts think and solve problems." },
+          { icon: <Globe className="w[20px]6 h-[20px] mb-[12px]" />, title: "Locality-Aware Guidance", desc: "Answers personalized to your legal region or country, ensuring accuracy and relevance." },
+          { icon: <FileText className="w-[20px] h-[20px] mb-[12px]" />, title: "Document Generator", desc: "Auto-generate immigration forms, appeal letters, tax notices, and more — editable and export-ready." },
+          { icon: <Bot className="w-[20px] h-[20px] mb-[12px]" />, title: "Conversational UX", desc: "Feels like chatting with a human consultant — complete with memory, tone, and follow-ups." },
+          { icon: <FileSearch className="w-[20px] h-[20px] mb-[12px]" />, title: "Explainability Engine", desc: "Breaks down complex terms and procedures into plain English — so you always understand the 'why'." },
+          { icon: <Layers className="w-[20px] h-[20px] mb-[12px]" />, title: "Multi-Niche Coverage", desc: "Support for 500+ niches across immigration, finance, law, parenting, grants, and more." }
         ].map(({ icon, title, desc }) => (
           <motion.div
             key={title}
             initial={false}
             whileHover={{ scale: 1.03 }}
             transition={{ type: "spring", stiffness: 200 }}
-            className="border rounded-xl p-6 hover:shadow-lg transition"
+            className="border rounded-[20px] p-[20px] hover:shadow-lg transition"
           >
             <div className="text-primary">{icon}</div>
             <h3 className="text-xl font-semibold mb-2">{title}</h3>
@@ -125,8 +121,8 @@ export default function LandingPage() {
       </main>
 
       <section id="usecases" className="max-w-6xl mx-auto px-6 md:px-0 mt-24">
-        <h2 className="text-3xl font-bold text-center mb-4">Use Cases</h2>
-        <p className="text-muted-foreground text-center mb-12 max-w-2xl mx-auto">
+        <h2 className="text-[24px] font-semibold font-cormorant text-center mb-[18px]">Use Cases</h2>
+        <p className="text-muted-foreground text-center mb-[14px] max-w-[640px] mx-auto">
           From immigration and legal assistance to grant writing and business compliance — Expertaihub is your AI-powered advisor for everything complex, local, and high-stakes.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -136,7 +132,7 @@ export default function LandingPage() {
               initial={false}
               whileHover={active ? { scale: 1.03 } : {}}
               transition={{ type: "spring", stiffness: 200 }}
-              className={`border rounded-xl p-6 flex flex-col justify-between transition ${active ? "bg-card text-foreground" : "bg-muted/30 text-muted-foreground opacity-60"}`}
+              className={`border rounded-xl p-6 flex flex-col justify-between transition ${active ? "bg-[#fcfbf7]  text-foreground" : "bg-muted/30 text-muted-foreground opacity-60"}`}
             >
               <div>
                 <div>{icon}</div>
@@ -145,7 +141,7 @@ export default function LandingPage() {
               </div>
               {active ? (
                 <Link href={`/signup?question=${encodeURIComponent(title.toLowerCase())}`}>
-                  <Button variant="outline" size="sm">Try This</Button>
+                  <Button variant="outline" size="sm" className="bg-[#fcfbf7]">Try This</Button>
                 </Link>
               ) : (
                 <Button variant="ghost" size="sm" disabled>🔒 Coming Soon</Button>

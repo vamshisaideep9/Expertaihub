@@ -16,99 +16,103 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
       rehypePlugins={[rehypeRaw]}
       skipHtml={false}
       components={{
-        table: ({ node, ...props }) => (
-          <table
+        // H2 styling
+        h2: ({ node, ...props }) => (
+          <h2
             {...props}
-            className="
-              w-full
-              table-auto
-              border-separate
-              border-spacing-0
-              my-6
-              border
-              border-gray-400
-              rounded-lg
-              bg-[#fcfbf7]
-              font-cormorant
-              text-[1.1rem]
-            "
+            className="mt-6 mb-4 text-3xl font-semibold font-cormorant leading-tight"
           />
         ),
-        thead: (props) => <thead {...props} />,  
-        tbody: (props) => <tbody {...props} />,  
+        // H3 styling
+        h3: ({ node, ...props }) => (
+          <h3
+            {...props}
+            className="mt-5 mb-2 text-2xl font-semibold font-cormorant leading-snug"
+          />
+        ),
+
+        // Table wrapper for scroll + fixed layout
+        table: ({ node, ...props }) => (
+          <div className="overflow-x-auto my-6">
+            <table
+              {...props}
+              className="
+                min-w-full
+                table-auto
+                border-collapse
+                border border-gray-400
+                rounded-lg
+                bg-[#fcfbf7]
+                font-cormorant
+                text-[1.1rem]
+              "
+            />
+          </div>
+        ),
+
+        thead: (props) => <thead {...props} />,
+        tbody: (props) => <tbody {...props} />,
+
         tr: ({ node, ...props }) => (
           <tr
             {...props}
-            className="
-              odd:bg-[#faf9f5]
-              even:bg-[#fcfbf7]
-            "
+            className="odd:bg-[#faf9f5] even:bg-[#fcfbf7]"
           />
         ),
+
         th: ({ node, ...props }) => (
           <th
             {...props}
             className="
-              px-4
-              py-2
+              px-4 py-2
               bg-gray-100
               font-semibold
               text-left
-              border-b-2
-              border-gray-400
-              border-r
-              border-gray-400
-              last:border-r-0
+              border border-gray-400
             "
           />
         ),
+
         td: ({ node, ...props }) => (
           <td
             {...props}
             className="
-              px-4
-              py-2
-              border-b
-              border-gray-400
-              border-r
-              border-gray-400
-              last:border-r-0
+              px-4 py-2
+              border border-gray-400
               align-top
-              whitespace-pre-wrap
+              whitespace-normal
             "
           />
         ),
-        h3: (p) => (
-          <h3
-            {...p}
-            className="mt-5 mb-2 text-2xl font-base leading-tight font-cormorant"
-          />
-        ),
 
-        strong: (p) => <strong {...p} className="font-semibold" />,
-
-        p: (p) => (
+        p: ({ node, ...props }) => (
           <p
-            {...p}
+            {...props}
             className="mt-2 text-[1.2rem] leading-relaxed font-cormorant"
           />
         ),
 
-        ul: (p) => (
+        ul: ({ node, ...props }) => (
           <ul
-            {...p}
-            className="list-disc ml-6 space-y-1 marker:font-base text-lg [&>li]:font-normal [&_ol>li]:!font-normal [&_ol]:marker:font-semibold"
+            {...props}
+            className="list-disc ml-6 space-y-1 marker:font-base text-lg [&>li]:font-normal"
           />
         ),
 
-        ol: (p) => (
+        ol: ({ node, ...props }) => (
           <ol
-            {...p}
+            {...props}
             className="list-decimal ml-6 space-y-1 marker:font-semibold [&>li]:font-semibold"
           />
         ),
 
-        li: (p) => <li {...p} className="mt-1">{p.children}</li>,
+        li: ({ node, ...props }) => (
+          <li {...props} className="mt-1" />
+        ),
+
+        strong: ({ node, ...props }) => (
+          <strong {...props} className="font-semibold" />
+        ),
 
         a: ({ node, ...props }) => (
           <a

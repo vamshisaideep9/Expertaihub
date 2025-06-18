@@ -7,29 +7,7 @@ app = Celery("expertaihub_backend")
 app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 
-app.conf.beat_schedule = {
-    "monthly-uscode-title8-pdf": {
-        "task": "ai_core.tasks.fetch_uscode_title8_pdf",
-        "schedule": crontab(minute=0, hour=1, day_of_month=1),
-    },
-    "monthly-cfr-title8-vol1-pdf": {
-        "task": "ai_core.tasks.fetch_cfr_title8_vol1_pdf",
-        "schedule": crontab(minute=30, hour=1, day_of_month=1),
-    },
-}
-
-
 app.conf.beat_schedule.update({
-    # … your existing schedules …
-    "monthly-federal-register-notices": {
-        "task": "ai_core.tasks.fetch_federal_register_notices",
-        "schedule": crontab(minute=0, hour=2, day_of_month=2),
-    },
-})
-
-
-app.conf.beat_schedule.update({
-    # … existing entries …
     "monthly-visa-bulletin": {
         "task": "ai_core.tasks.fetch_visa_bulletin",
         "schedule": crontab(minute=0, hour=6, day_of_month=1),
@@ -41,6 +19,16 @@ app.conf.beat_schedule.update({
     # … existing tasks …
     "monthly-uscis-policy-manual": {
         "task": "ai_core.tasks.fetch_uscis_policy_manual",
+        "schedule": crontab(minute=0, hour=3, day_of_week="mon"),
+    },
+    
+})
+
+
+app.conf.beat_schedule.update({
+    # … existing tasks …
+    "monthly-uscis-policy-manual": {
+        "task": "ai_core.tasks.fetch_uscis_policy_memos",
         "schedule": crontab(minute=0, hour=3, day_of_month=1),
     },
     
@@ -57,21 +45,6 @@ app.conf.beat_schedule.update({
 })
 
 
-app.conf.beat_schedule.update({
-    "daily-courtlistener-immigration-pdfs": {
-        "task": "ai_core.tasks.fetch_courtlistener_immigration_pdfs",
-        "schedule": crontab(hour=2, minute=30),
-    },
-})
-
-
-app.conf.beat_schedule.update({
-    # … other tasks …
-    "monthly-immigration-law-advisor": {
-        "task": "ai_core.tasks.fetch_immigration_law_advisor_pdfs",
-        "schedule": crontab(minute=0, hour=6, day_of_month=1),
-    },
-})
 
 
 
@@ -87,9 +60,19 @@ app.conf.beat_schedule.update({
 
 
 app.conf.beat_schedule.update({
-    "monthly-ca9-imm-outline-pdfs": {
-        "task": "ai_core.tasks.fetch_ca9_immigration_outline_pdfs",
-        "schedule": crontab(minute=0, hour=6, day_of_month=1),
+    "daily-uscis-news-releases": {
+        "task": "ai_core.tasks.fetch_uscis_news_releases",
+        # every day at 3:00 AM Asia/Kolkata
+        "schedule": crontab(hour=3, minute=0),
+    },
+})
+
+
+
+app.conf.beat_schedule.update({
+    "daily-uscis-alerts": {
+        "task": "ai_core.tasks.fetch_uscis_alerts",
+        "schedule": crontab(hour=3, minute=0),
     },
 })
 

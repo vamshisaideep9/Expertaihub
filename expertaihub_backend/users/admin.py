@@ -47,7 +47,7 @@ class AdvisorAdmin(admin.ModelAdmin):
 
 @admin.register(Country)
 class CountryAdmin(admin.ModelAdmin):
-    list_display = ('name', 'code', 'is_active')
+    list_display = ('name','is_active')
 
 
 #Chats
@@ -92,7 +92,7 @@ class DocumentChunkInline(admin.TabularInline):
 
 @admin.register(RawDocument)
 class RawDocumentAdmin(admin.ModelAdmin):
-    list_display = ("filename", "category", "created_at")
+    list_display = ("filename", "category", "advisor", "country", "created_at")
     search_fields = ("filename", "category", "source_path")
     list_filter = ("category",)
     readonly_fields = ("created_at",)
