@@ -15,4 +15,3 @@ psycopg2-binary
 django-environ
 django-debug-toolbar
 django-extensions
-django-pgvector

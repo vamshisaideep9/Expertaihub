@@ -63,17 +63,3 @@ Want to add your own? Just plug in your expert documents — and deploy.
 4. Auto-generate legal-grade docs or workflows
 
 ---
-
-## 🛠 Setup
-
-Ensure the required PostgreSQL extensions are installed before applying
-migrations:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-```
-
-
-
-
