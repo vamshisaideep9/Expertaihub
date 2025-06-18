@@ -39,7 +39,6 @@ from rest_framework.request import Request
 
 import json
 from suggestions.models import ChatSuggestion
-from suggestions.serializers import ChatSuggestionSerializer
 
 
 logo_path = finders.find("logo-dark.png")
@@ -272,7 +271,7 @@ class ChatSessionStreamView(APIView):
         session.save(update_fields=["memory_data", "updated"])
 
     def _create_suggestions(self, session, texts):
-        """Create ChatSuggestion objects for the session and return serialized data."""
+        """Create ChatSuggestion objects and return plain text list."""
         offset = ChatSuggestion.objects.filter(session=session).count()
         objs = []
         for idx, text in enumerate(texts):
@@ -285,7 +284,7 @@ class ChatSessionStreamView(APIView):
                 defaults={"rank": offset + idx + 1},
             )
             objs.append(obj)
-        return ChatSuggestionSerializer(objs, many=True).data
+        return [o.text for o in objs]
 
     async def head(self, request, slug, *args, **kwargs):
         # just verify session exists & user owns it
