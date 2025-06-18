@@ -1,6 +1,6 @@
 # chats/views.py
 
-import uuid, logging
+import uuid, logging, json
 from datetime import date
 from django.utils.text import slugify
 from django.utils import timezone
@@ -35,6 +35,8 @@ from django.contrib.staticfiles import finders
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from asgiref.sync import sync_to_async
 from rest_framework.request import Request
+from suggestions.models import ChatSuggestion
+from suggestions.serializers import ChatSuggestionSerializer
 
 
 logo_path = finders.find("logo-dark.png")
@@ -266,6 +268,22 @@ class ChatSessionStreamView(APIView):
         session.memory_data = mem
         session.save(update_fields=["memory_data", "updated"])
 
+    def _create_suggestions(self, session, texts):
+        """Create ChatSuggestion objects for the session and return serialized data."""
+        offset = ChatSuggestion.objects.filter(session=session).count()
+        objs = []
+        for idx, text in enumerate(texts):
+            text = str(text).strip()
+            if not text:
+                continue
+            obj, _ = ChatSuggestion.objects.update_or_create(
+                session=session,
+                text=text,
+                defaults={"rank": offset + idx + 1},
+            )
+            objs.append(obj)
+        return ChatSuggestionSerializer(objs, many=True).data
+
     async def head(self, request, slug, *args, **kwargs):
         # just verify session exists & user owns it
         await sync_to_async(get_object_or_404)(ChatSession, slug=slug, user=request.user)
@@ -316,6 +334,8 @@ class ChatSessionStreamView(APIView):
         # 5) Streaming generator
         async def stream_response():
             full_answer = ""
+            docs = []
+            suggestions = []
             try:
                 # invoke your LLM/RAG pipeline
                 country = await sync_to_async(lambda: str(getattr(session, "country", "usa")).lower())()
@@ -328,6 +348,8 @@ class ChatSessionStreamView(APIView):
                 })
                 answer = (result.get("answer") or "").strip()
                 docs = result.get("docs", [])  # Get docs from result
+                related = result.get("related_queries", [])
+                suggestions = await sync_to_async(self._create_suggestions)(session, related)
 
                 # Record usage only if RAG was used (docs present)
                 if docs:
@@ -367,6 +389,9 @@ class ChatSessionStreamView(APIView):
             session.completed = True
             session.updated = timezone.now()
             await sync_to_async(session.save)(update_fields=["completed", "updated"])
+
+            # send metadata as final JSON
+            yield json.dumps({"docs": docs, "suggestions": suggestions})
 
         return StreamingHttpResponse(stream_response(), content_type="text/plain; charset=utf-8")
                                      
