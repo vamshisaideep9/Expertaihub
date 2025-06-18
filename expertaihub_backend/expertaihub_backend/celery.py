@@ -38,11 +38,11 @@ app.conf.beat_schedule.update({
 
 app.conf.beat_schedule.update({
     # … existing tasks …
-    "monthly-uscis-policy-manual": {
+    "monthly-uscis-policy-memos": {
         "task": "ai_core.tasks.fetch_uscis_policy_memos",
         "schedule": crontab(minute=0, hour=3, day_of_month=1),
     },
-    
+
 })
 
 
