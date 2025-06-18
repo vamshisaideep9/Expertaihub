@@ -1,3 +1,7 @@
+import pytest
+
+pytest.importorskip("django")
+
 import tempfile
 from pathlib import Path
 

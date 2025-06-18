@@ -63,3 +63,14 @@ Want to add your own? Just plug in your expert documents — and deploy.
 4. Auto-generate legal-grade docs or workflows
 
 ---
+
+## 🧪 Running Tests
+
+Before running the Python tests, install the backend dependencies:
+
+```bash
+pip install -r expertaihub_backend/requirements.txt
+```
+
+After installing the packages, execute the test suite with `pytest`.
+
