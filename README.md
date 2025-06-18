@@ -78,21 +78,29 @@ After installing the packages, execute the test suite with `pytest`.
 
 ## ❓ Building FAQ Suggestions
 
-Before creating the FAISS index you need some `FAQQuestion` rows. Load the
-starter questions with:
+Before creating the FAISS index you need some `FAQQuestion` rows. A quick way to
+seed the database is with the bundled management command:
 
-```
+```bash
 python manage.py load_faq_questions
 ```
 
-After the questions are in place, generate or update the FAQ index:
+The command loads questions from a JSON fixture by default, but you can supply
+your own file with `--file`. Converting a CSV export to JSON works well. You may
+also create questions manually through the Django admin (`/admin/` →
+**FAQ questions**).
 
-```
+Once the questions exist, generate or update the FAQ index with:
+
+```bash
 python manage.py build_faq_index
 ```
 
-This stores the FAISS files under `expertaihub_backend/suggestions/vectorstores/free/`.
-You can set up a Celery beat task to run `suggestions.tasks.build_faq_index` periodically so the index stays fresh.
+`build_faq_index` will only create an index if `FAQQuestion` records are present
+in the database. The resulting FAISS files are stored under
+`expertaihub_backend/suggestions/vectorstores/free/`. You can set up a Celery
+beat task to run `suggestions.tasks.build_faq_index` periodically so the index
+stays fresh.
 
 ---
 
