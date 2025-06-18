@@ -23,6 +23,7 @@ from ai_core.langgraph.nodes.nodes import (
     simple_response,
     generate_summary
 )
+from ai_core.langgraph.nodes.related_free import RelatedFree
 
 class GraphState(TypedDict, total=False):
     session_id: str
@@ -34,6 +35,7 @@ class GraphState(TypedDict, total=False):
     trimmed_docs: List[str]            # from summarization
     used_retrieval: bool
     answer: Optional[str]
+    related_queries: List[str]
     niche: Optional[str]
     country: Optional[str]
     # date‐filter fields
@@ -54,6 +56,7 @@ def get_free_immigration_graph():
     g.add_node("router",            lambda s: s)
     g.add_node("retrieve_context",   retrieve_context)
     g.add_node("summarize_context",  summarize_context)
+    g.add_node("related_free",      RelatedFree())
     g.add_node("simple_response",    simple_response)     # new
     g.add_node("generate_summary",   generate_summary)    # new
     g.add_node("generate_response",  generate_response)
@@ -105,8 +108,8 @@ def get_free_immigration_graph():
     )
 
     # ─── summarization branch ─────────────────────────────────────────────
-    # if summarize_context → generate_response
-    g.add_edge("summarize_context", "generate_response")
+    g.add_edge("summarize_context", "related_free")
+    g.add_edge("related_free", "generate_response")
 
     # ─── terminal nodes all flow into log_query ────────────────────────────
     for src in [
