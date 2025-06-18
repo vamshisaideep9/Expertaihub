@@ -1,0 +1,7 @@
+[
+  {"model": "suggestions.faqquestion", "fields": {"text": "What documents are required to file Form AR-11?"}},
+  {"model": "suggestions.faqquestion", "fields": {"text": "Can you explain DACA eligibility and benefits?"}},
+  {"model": "suggestions.faqquestion", "fields": {"text": "What is the step-by-step process to renew my Green Card?"}},
+  {"model": "suggestions.faqquestion", "fields": {"text": "How should I prepare for a visa interview?"}},
+  {"model": "suggestions.faqquestion", "fields": {"text": "What are the steps to bring my spouse to the USA?"}}
+]
