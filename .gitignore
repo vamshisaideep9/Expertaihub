@@ -173,7 +173,7 @@ cython_debug/
 # PyPI configuration file
 .pypirc 
 
-# expertaihub_backend/documents
+expertaihub_backend/documents
 
 expertaihub_backend/ai_core/rag/vectorstores/free/immigration/usa/index.faiss
 expertaihub_backend/ai_core/rag/vectorstores/free/immigration/usa/index.pkl
