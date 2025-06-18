@@ -38,6 +38,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { RelatedQueries } from "@/components/RelatedQueries";
 import ResponsiveSidebar from "@/components/ResponsiveSidebar";
 import api from "@/lib/apiprivate";
 import { UserContext } from "@/context/UserContext";
@@ -65,10 +66,11 @@ type Message = {
   html_content?: string;
   timestamp: string;
   user_reaction?: "like" | "dislike";
-  user_feedback?: { 
-    reasons: string[]; 
-    additional_comments: string 
+  user_feedback?: {
+    reasons: string[];
+    additional_comments: string
   };
+  suggestions?: string[];
 };
 
 export default function ChatPage() {
@@ -500,6 +502,10 @@ useEffect(() => {
 
   const [copiedUnderChat, setCopiedUnderChat] = useState(false);
   const [sharedUnderChat, setSharedUnderChat] = useState(false);
+  function handleSuggestionClick(text: string) {
+    setInput(text);
+    void sendMessage(null, text);
+  }
 
   useEffect(() => {
     if (justSent || streaming) {
@@ -510,9 +516,9 @@ useEffect(() => {
   
 
   // ——— Send & stream logic ———
-  async function sendMessage(e: FormEvent) {
-    e.preventDefault();
-    const text = input.trim();
+  async function sendMessage(e?: FormEvent | null, overrideText?: string) {
+    e?.preventDefault();
+    const text = (overrideText ?? input).trim();
     if (!text || !slug) return;
 
     let aborted = false;
@@ -573,18 +579,36 @@ useEffect(() => {
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let done = false;
+      let finalSuggestions: string[] | null = null;
 
       while (!done) {
         const { value, done: rd } = await reader.read();
         done = rd;
         if (value) {
           const chunk = dec.decode(value);
+          if (done) {
+            const trimmed = chunk.trimStart();
+            try {
+              const obj = JSON.parse(trimmed);
+              if (Array.isArray(obj.suggestions)) {
+                finalSuggestions = obj.suggestions as string[];
+                continue;
+              }
+            } catch {}
+          }
           // Append each chunk onto the last assistant stub
           setHistory((h) => {
             const last = h[h.length - 1];
             return [...h.slice(0, -1), { ...last, content: last.content + chunk }];
           });
         }
+      }
+
+      if (finalSuggestions) {
+        setHistory(h => {
+          const last = h[h.length - 1];
+          return [...h.slice(0, -1), { ...last, suggestions: finalSuggestions }];
+        });
       }
     } catch (err: any) {
       if (err.name === "AbortError") {
@@ -1322,6 +1346,9 @@ async function submitReaction(feedback?: { reason?: string; comments?: string })
   return (
     <div key={m.id} className="pt-4 pb-6">
       <MarkdownRenderer content={m.content} />
+      {m.suggestions && m.suggestions.length > 0 && (
+        <RelatedQueries suggestions={m.suggestions} onSelect={handleSuggestionClick} />
+      )}
       {!(streaming && isLast) && (
         <>
           <div className="flex justify-between items-center text-gray-800 dark:text-gray-400 mt-5">

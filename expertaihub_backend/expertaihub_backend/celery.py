@@ -76,3 +76,11 @@ app.conf.beat_schedule.update({
     },
 })
 
+# Build or update the FAQ index daily at 2 AM
+app.conf.beat_schedule.update({
+    "daily-build-faq-index": {
+        "task": "suggestions.tasks.build_faq_index",
+        "schedule": crontab(hour=2, minute=0),
+    },
+})
+
