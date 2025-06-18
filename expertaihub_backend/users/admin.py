@@ -4,6 +4,7 @@ from .models import CustomUser
 from membership.models import Membership, MonthlyUsage
 from ai_core.models import Advisor, Country, DocumentChunk, RawDocument
 from chats.models import ChatMessage, ChatSession, Reaction, AccessRequest, MessageFeedback
+from suggestions.models import FAQQuestion, ChatSuggestion
 
 
 class CustomUserAdmin(UserAdmin):
@@ -76,6 +77,12 @@ class AccessRequestAdmin(admin.ModelAdmin):
     list_display = ("id", "session", "requester", "status", "created")
     list_filter  = ("status", "created")
     search_fields = ("session__title", "requester__email")
+
+
+@admin.register(ChatSuggestion)
+class ChatSuggestionAdmin(admin.ModelAdmin):
+    list_display = ("id", "session", "text", "rank", "clicked", "created")
+
 
 
 

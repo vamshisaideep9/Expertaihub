@@ -1,11 +1,22 @@
 from celery import Celery
 from celery.schedules import crontab
 import os
+import platform
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "expertaihub_backend.settings")
 app = Celery("expertaihub_backend")
 app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
+
+# Windows-specific configuration
+if platform.system().lower() == "windows":
+    app.conf.update(
+        task_always_eager=False,
+        task_eager_propagates=True,
+        worker_pool_restarts=True,
+        worker_pool='solo',  # Use solo pool on Windows
+        worker_concurrency=1,  # Single worker process
+    )
 
 app.conf.beat_schedule.update({
     "monthly-visa-bulletin": {
