@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.generics import CreateAPIView
 from django.http import StreamingHttpResponse, HttpResponse
 from .models import ChatSession, ChatMessage, Reaction, AccessRequest
+from suggestions.models import ChatSuggestion
 from .serializers import ChatMessageSerializer, ChatSessionSerializer, MessageFeedbackSerializer, ReactionSerializer
 from ai_core.models import Advisor, Country
 from membership.models import MonthlyUsage
@@ -35,6 +36,7 @@ from django.contrib.staticfiles import finders
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from asgiref.sync import sync_to_async
 from rest_framework.request import Request
+import json
 
 
 logo_path = finders.find("logo-dark.png")
@@ -362,6 +364,15 @@ class ChatSessionStreamView(APIView):
             await sync_to_async(ChatMessage.objects.filter(id=stub_id).update)(
                 html_content=html
             )
+
+            # store any related queries as ChatSuggestion rows
+            related = result.get("related_queries") or []
+            if related:
+                for rank, text in enumerate(related[:5], start=1):
+                    await sync_to_async(ChatSuggestion.objects.create)(
+                        session=session, text=text, rank=rank
+                    )
+                yield json.dumps({"related_queries": related[:5]})
 
             # mark session complete
             session.completed = True
