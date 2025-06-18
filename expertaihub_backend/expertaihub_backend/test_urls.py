@@ -1,3 +1,7 @@
+import pytest
+
+pytest.importorskip("django")
+
 from django.urls import include, path
 
 urlpatterns = [

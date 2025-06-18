@@ -1,3 +1,7 @@
+import pytest
+
+pytest.importorskip("django")
+
 import os
 import json
 import tempfile

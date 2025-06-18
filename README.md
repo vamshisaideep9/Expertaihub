@@ -64,6 +64,18 @@ Want to add your own? Just plug in your expert documents — and deploy.
 
 ---
 
+
+## 🧪 Running Tests
+
+Before running the Python tests, install the backend dependencies:
+
+```bash
+pip install -r expertaihub_backend/requirements.txt
+```
+
+After installing the packages, execute the test suite with `pytest`.
+
+
 ## ❓ Building FAQ Suggestions
 
 Run the management command to generate or update the FAQ index:
@@ -76,3 +88,4 @@ This stores the FAISS files under `expertaihub_backend/suggestions/vectorstores/
 You can set up a Celery beat task to run `suggestions.tasks.build_faq_index` periodically so the index stays fresh.
 
 ---
+
