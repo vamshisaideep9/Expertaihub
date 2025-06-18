@@ -388,14 +388,6 @@ class ChatSessionStreamView(APIView):
                 html_content=html
             )
 
-            # store any related queries as ChatSuggestion rows
-            related = result.get("related_queries") or []
-            if related:
-                for rank, text in enumerate(related[:5], start=1):
-                    await sync_to_async(ChatSuggestion.objects.create)(
-                        session=session, text=text, rank=rank
-                    )
-                yield json.dumps({"related_queries": related[:5]})
 
             # mark session complete
             session.completed = True
