@@ -78,7 +78,14 @@ After installing the packages, execute the test suite with `pytest`.
 
 ## ❓ Building FAQ Suggestions
 
-Run the management command to generate or update the FAQ index:
+Before creating the FAISS index you need some `FAQQuestion` rows. Load the
+starter questions with:
+
+```
+python manage.py load_faq_questions
+```
+
+After the questions are in place, generate or update the FAQ index:
 
 ```
 python manage.py build_faq_index
