@@ -34,3 +34,22 @@ class StreamSuggestionTests(TestCase):
 
         body = b"".join(resp.streaming_content).decode()
         self.assertIn("Q0", body)
+
+    @patch("chats.views.graph.invoke")
+    def test_stream_does_not_duplicate_suggestions(self, mock_invoke):
+        mock_invoke.return_value = {
+            "answer": "Ok",
+            "related_queries": ["A", "B", "C"],
+        }
+
+        url = reverse("chats:chat-session-stream", args=[self.session.slug])
+        resp = self.client.post(url, {"question": "Hi"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+
+        suggestions = ChatSuggestion.objects.filter(session=self.session)
+        self.assertEqual(suggestions.count(), 3)
+        for text in ["A", "B", "C"]:
+            self.assertEqual(
+                ChatSuggestion.objects.filter(session=self.session, text=text).count(),
+                1,
+            )
