@@ -64,5 +64,16 @@ Want to add your own? Just plug in your expert documents — and deploy.
 
 ---
 
+## 🛠 Setup
+
+Ensure the required PostgreSQL extensions are installed before applying
+migrations:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+```
+
+
 
 
