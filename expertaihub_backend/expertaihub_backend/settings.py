@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     'ai_core',
     "membership",
     "chats",
+    "suggestions",
     
 ]
 
