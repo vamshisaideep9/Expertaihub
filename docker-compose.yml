@@ -1,0 +1,47 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+
+  backend:
+    build: ./expertaihub_backend
+    command: gunicorn expertaihub_backend.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+    volumes:
+      - ./expertaihub_backend:/app
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "8000:8000"
+
+  celery:
+    build: ./expertaihub_backend
+    command: celery -A expertaihub_backend.celery:app worker -l info
+    volumes:
+      - ./expertaihub_backend:/app
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+
+  frontend:
+    build: ./expertaihub-frontend
+    env_file: .env
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  postgres_data:
