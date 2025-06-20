@@ -19,6 +19,7 @@ class Migration(migrations.Migration):
                 ('slug', models.SlugField(unique=True)),
                 ('description', models.TextField(blank=True)),
                 ('is_active', models.BooleanField(default=True)),
+                ('country', models.ForeignKey('Country', on_delete=models.CASCADE)),
             ],
         ),
         migrations.CreateModel(
@@ -29,5 +30,10 @@ class Migration(migrations.Migration):
                 ('code', models.CharField(max_length=10, unique=True)),
                 ('is_active', models.BooleanField(default=True)),
             ],
+        ),
+        migrations.AddField(
+            model_name='advisor',
+            name='country',
+            field=models.ForeignKey('Country', on_delete=models.CASCADE),
         ),
     ]

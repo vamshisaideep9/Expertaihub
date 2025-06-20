@@ -9,12 +9,12 @@ from suggestions.models import FAQQuestion, ChatSuggestion
 
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
-    list_display = ['email', 'full_name', 'is_active', 'is_staff']
+    list_display = ['email', 'username', 'full_name', 'is_active', 'is_staff']
     ordering = ['email']
-    search_fields = ['email', 'full_name']
+    search_fields = ['email', 'username', 'full_name']
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
-        ('Personal Info', {'fields': ('full_name',)}),
+        ('Personal Info', {'fields': ('full_name', )}),
         ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
         ('Important dates', {'fields': ('last_login',)}),
     )
@@ -83,6 +83,10 @@ class AccessRequestAdmin(admin.ModelAdmin):
 class ChatSuggestionAdmin(admin.ModelAdmin):
     list_display = ("id", "session", "text", "rank", "clicked", "created")
 
+
+@admin.register(FAQQuestion)
+class FAQQuestionAdmin(admin.ModelAdmin):
+    list_display = ("id", "text", "tier", "created_at")
 
 
 

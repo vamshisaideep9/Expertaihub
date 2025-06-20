@@ -68,7 +68,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-[#fcfbf7] text-foreground scroll-smooth">
       <nav className="sticky top-0 z-[100] w-full flex items-center justify-between py-[12px] md:px-[24px] border-b border-muted bg-[#fcfbf7] shadow-sm">
         <Link href="/">
-          <span className="text-xl font-medium cursor-pointer font-cormorant">Expertaihub</span>
+          <img src="/Expertaihub-1.png" alt="Expertaihub Logo" className="h-8 bg-[#fcfbf7] w-auto cursor-pointer" />
         </Link>
         <div className="flex items-center space-x-[18px] text-muted-foreground text-sm">
           {['Features','Use Cases','Pricing'].map(section => (
@@ -120,12 +120,12 @@ export default function LandingPage() {
         ))}
       </main>
 
-      <section id="usecases" className="max-w-6xl mx-auto px-6 md:px-0 mt-24">
+      <section id="usecases" className="max-w-6xl mx-auto px-6 md:px-0 mt-24px">
         <h2 className="text-[24px] font-semibold font-cormorant text-center mb-[18px]">Use Cases</h2>
         <p className="text-muted-foreground text-center mb-[14px] max-w-[640px] mx-auto">
           From immigration and legal assistance to grant writing and business compliance — Expertaihub is your AI-powered advisor for everything complex, local, and high-stakes.
         </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {useCases.map(({ icon, title, desc, active }) => (
             <motion.div
               key={title}
@@ -147,7 +147,7 @@ export default function LandingPage() {
                 <Button variant="ghost" size="sm" disabled>🔒 Coming Soon</Button>
               )}
             </motion.div>
-          ))}
+          ))} 
         </div>
       </section>
 

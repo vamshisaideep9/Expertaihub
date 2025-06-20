@@ -18,7 +18,7 @@ class Command(BaseCommand):
                             help="Advisor slug (e.g. 'immigration')")
         parser.add_argument("country", type=str,
                             help="Country name (e.g. 'usa' or 'United States')")
-        parser.add_argument("--batch-size", type=int, default=None,
+        parser.add_argument("--batch-size", type=int, default=8,
                             help="Batch size override for build_vector_store_free")
         parser.add_argument("--vector-root", type=str, default=None,
                             help="Vector-root override for build_vector_store_free")

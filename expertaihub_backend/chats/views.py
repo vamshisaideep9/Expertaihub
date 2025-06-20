@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.generics import CreateAPIView
 from django.http import StreamingHttpResponse, HttpResponse
 from .models import ChatSession, ChatMessage, Reaction, AccessRequest
-from suggestions.models import ChatSuggestion
+from suggestions.models import ChatSuggestion, FAQQuestion
 from .serializers import ChatMessageSerializer, ChatSessionSerializer, MessageFeedbackSerializer, ReactionSerializer
 from ai_core.models import Advisor, Country
 from membership.models import MonthlyUsage
@@ -219,6 +219,13 @@ class ChatSessionCreateView(APIView):
         )
         logger.info("Created ChatSession slug=%s", slug)
 
+        # Save initial question to FAQQuestion for future suggestions
+        try:
+            FAQQuestion.objects.get_or_create(text=question)
+            logger.info(f"[CreateView] Saved question to FAQQuestion: {question}")
+        except Exception as e:
+            logger.warning(f"[CreateView] Failed to save question to FAQQuestion: {e}")
+
         return Response(
             {
                 "session_id": str(session.session_id),
@@ -272,16 +279,18 @@ class ChatSessionStreamView(APIView):
 
     def _create_suggestions(self, session, texts):
         """Create ChatSuggestion objects and return plain text list."""
-        offset = ChatSuggestion.objects.filter(session=session).count()
+        # Clear existing suggestions for this session
+        ChatSuggestion.objects.filter(session=session).delete()
+        
         objs = []
         for idx, text in enumerate(texts):
             text = str(text).strip()
             if not text:
                 continue
-            obj, _ = ChatSuggestion.objects.update_or_create(
+            obj, _ = ChatSuggestion.objects.get_or_create(
                 session=session,
                 text=text,
-                defaults={"rank": offset + idx + 1},
+                defaults={"rank": idx + 1},
             )
             objs.append(obj)
         return [o.text for o in objs]
@@ -315,6 +324,13 @@ class ChatSessionStreamView(APIView):
         await sync_to_async(self._append_memory)(session, "user", question)
         logger.info(f"[StreamView] Stored user turn: {question}")
 
+        # Save question to FAQQuestion for future suggestions
+        try:
+            await sync_to_async(FAQQuestion.objects.get_or_create)(text=question)
+            logger.info(f"[StreamView] Saved question to FAQQuestion: {question}")
+        except Exception as e:
+            logger.warning(f"[StreamView] Failed to save question to FAQQuestion: {e}")
+
         # 4) Prepare assistant stub
         assistant = None
         if reply_to:
@@ -340,8 +356,8 @@ class ChatSessionStreamView(APIView):
             suggestions = []
             try:
                 # invoke your LLM/RAG pipeline
-                country = await sync_to_async(lambda: str(getattr(session, "country", "usa")).lower())()
-                niche   = await sync_to_async(lambda: getattr(session, "niche", "immigration"))()
+                country = await sync_to_async(lambda: session.country.name.lower() if session.country else "usa")()
+                niche   = await sync_to_async(lambda: session.niche)()  
                 result  = await sync_to_async(graph.invoke)({
                     "session_id": session.session_id,
                     "question": question,

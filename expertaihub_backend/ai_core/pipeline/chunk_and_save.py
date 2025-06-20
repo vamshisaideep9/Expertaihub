@@ -111,7 +111,7 @@ def chunk_and_save():
 
     total_new_chunks = 0
 
-    for rd in RawDocument.objects.select_related("advisor", "country").all():
+    for rd in RawDocument.objects.select_related("advisor", "country").all().iterator(chunk_size=500):
         cur_hash  = rd.metadata.get("file_hash")
         prev_hash = rd.metadata.get("chunked_file_hash")
         if prev_hash == cur_hash:

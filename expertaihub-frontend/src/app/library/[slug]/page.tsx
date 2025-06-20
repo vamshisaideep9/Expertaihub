@@ -521,6 +521,10 @@ useEffect(() => {
     const text = (overrideText ?? input).trim();
     if (!text || !slug) return;
 
+
+    setHistory(h => h.map(m => ({ ...m, suggestions: undefined })));
+
+
     let aborted = false;
 
     // If out of quota, just show a local "limit reached" stub
@@ -1209,6 +1213,7 @@ async function submitReaction(feedback?: { reason?: string; comments?: string })
   const isExpanded = expanded === m.id;
   const display    = isExpanded ? m.content : paras.slice(0, 3).join("\n\n");
   const isEditingAssistant = m.id === regeneratingId && m.role === "assistant";
+  const isLastAssistant = m.role === "assistant" && idx === history.length - 1;
 
   // Auto-resize editor when it appears or content changes
 
@@ -1268,7 +1273,7 @@ async function submitReaction(feedback?: { reason?: string; comments?: string })
 
     // normal (non-editing) user message UI
     return (
-      <div key={m.id} className="relative group mb-6 bg-[#fcfbf7] rounded-lg p-4">
+      <div key={m.id} className="relative group mb-6 bg-[#fcfbf7] rounded-lg py-4">
         <div
           className={
             !isExpanded && tooLong
@@ -1346,9 +1351,6 @@ async function submitReaction(feedback?: { reason?: string; comments?: string })
   return (
     <div key={m.id} className="pt-4 pb-6">
       <MarkdownRenderer content={m.content} />
-      {m.suggestions && m.suggestions.length > 0 && (
-        <RelatedQueries suggestions={m.suggestions} onSelect={handleSuggestionClick} />
-      )}
       {!(streaming && isLast) && (
         <>
           <div className="flex justify-between items-center text-gray-800 dark:text-gray-400 mt-5">
@@ -1474,8 +1476,8 @@ async function submitReaction(feedback?: { reason?: string; comments?: string })
                 </FloatingMenu>
               </div>
             </div>
+            
           </div>
-          <hr className="border-t border-gray-200 my-4" />
           {openReasonForId === m.id && (
   <div className="mt-2 relative border border-gray-300 dark:border-gray-700 rounded-lg p-4 bg-[#fcfbf7] dark:bg-gray-800">
     {/* Close icon */}
@@ -1578,8 +1580,15 @@ async function submitReaction(feedback?: { reason?: string; comments?: string })
           </button>
         </div>
     )}
-  </div>
+      </div>
 )}
+          {isLastAssistant && m.suggestions && m.suggestions.length > 0 && (
+            <RelatedQueries
+              suggestions={m.suggestions}
+              onSelect={handleSuggestionClick}
+            />
+          )}
+          
 
 
         </>

@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Send, Mic, Search, ArrowUpLeft, Star, StopCircle } from "lucide-react";
 import apiPrivate from "@/lib/apiprivate";
 import ResponsiveSidebar from "@/components/ResponsiveSidebar";
@@ -20,22 +20,24 @@ export default function HomePage() {
   const [question, setQuestion] = useState("");
   const [processing, setProcessing] = useState(false);
   const [showSug, setShowSug] = useState(false);
-  const [advisorName, setAdvisor] = useState("...");
-  const [countryName, setCountry] = useState("...");
+  /* -----------------------------------------------------------
++     1)  Pick advisor & country once – then hold them in state
++         (query-params override; fallback to Immigration / USA)
++     ----------------------------------------------------------- */
+  const search     = useSearchParams();
+  const [advisorName] = useState(
+    (search.get("advisor")  ?? "immigration").toLowerCase()
+  );
+  const [countryName] = useState(
+    (search.get("country")  ?? "USA").toUpperCase()
+  );
+
+  /* you can delete the old /advisor/ and /country/ fetch calls */
   const [pendingSlug, setPendingSlug] = useState<string | null>(null);   // ← track the slug
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-        apiPrivate.get<{ name: string }>("/advisor/")
-          .then((r) => setAdvisor(r.data.name))
-          .catch(() => setAdvisor("immigration"));
-        apiPrivate.get<{ name: string }>("/country/")
-          .then((r) => setCountry(r.data.name))
-          .catch(() => setCountry("USA"));
-      }, []);
-    
       /*  realtime usage ---------------------------------------------- */
       const [currentUser, setCurrentUser] = useState<{ id: number }>({ id: 0 });
       useEffect(() => {
@@ -51,7 +53,7 @@ export default function HomePage() {
   // abort on unmount
   useEffect(() => () => controllerRef.current?.abort(), []);
 
-  const placeholder = `Ask anything about immigration in usa …`;
+  const placeholder = `Ask anything about ${advisorName} in ${countryName} …`;
   const filtered = DEFAULT_SUGGESTIONS.filter(s =>
     s.toLowerCase().includes(question.toLowerCase())
   );
@@ -94,7 +96,11 @@ export default function HomePage() {
       // 1️⃣ create session
       const { data: { slug } } = await apiPrivate.post<{ slug: string }>(
         "/sessions/create/",
-        { question: q, country: "+1" },
+        {
+                    question: q,
+                    advisor_name: advisorName,   // "immigration", "grant", …
+                    country:      countryName,   // "USA", "CANADA", …
+                  },
         { signal: ctrl.signal }
       );
       setPendingSlug(slug);

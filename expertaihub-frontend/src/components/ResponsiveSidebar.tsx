@@ -9,9 +9,9 @@ import {
   ArrowLeftFromLine,
   ArrowRightFromLine,
   Settings,
-  User,
+  CircleUser,
   Wand2,
-  Palette,
+  Settings2,
   CreditCard,
   LogOut,
   Plus,
@@ -40,11 +40,15 @@ function getAvatarColor(name: string) {
 type DropdownItemProps = {
   icon: React.ReactNode;
   label: string;
+  onClick?: () => void;
 };
 
-function DropdownItem({ icon, label }: DropdownItemProps) {
+function DropdownItem({ icon, label, onClick }: DropdownItemProps) {
   return (
-    <div className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition">
+    <div
+      className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition"
+      onClick={onClick}
+    >
       {icon}
       <span>{label}</span>
     </div>
@@ -194,11 +198,11 @@ export default function ResponsiveSidebar() {
                   </div>
 
                   <div className="flex flex-col space-y-1 px-4 text-sm text-gray-700 dark:text-gray-300">
-                    <DropdownItem icon={<User size={16} />} label="My Account" />
-                    <DropdownItem icon={<Wand2 size={16} />} label="Personalize" />
-                    <DropdownItem icon={<Palette size={16} />} label="Appearance" />
-                    <DropdownItem icon={<CreditCard size={16} />} label="Purchases" />
-                    <DropdownItem icon={<Settings size={16} />} label="Settings" />
+                    <DropdownItem icon={<CircleUser size={15}/>} label="My Account" onClick={() => router.push('/account/details/')} />
+                    <DropdownItem icon={<Settings2 size={15}/>} label="Preferences" onClick={() => router.push('/account/details/')} />
+                    <DropdownItem icon={<Wand2 size={15}/>} label="Personalize" onClick={() => router.push('/account/details/')} />
+                    <DropdownItem icon={<CreditCard size={15}/>} label="Purchases" onClick={() => router.push('/account/details/')} />
+                    <DropdownItem icon={<Settings size={15}/>} label="Settings" onClick={() => router.push('/account/details/')} />
                   </div>
 
                   <div className="border-t border-gray-200 dark:border-gray-700 mt-4 pt-4 flex justify-center">

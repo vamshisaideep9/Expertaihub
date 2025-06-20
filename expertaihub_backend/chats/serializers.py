@@ -6,6 +6,8 @@ from django.contrib.auth import get_user_model
 from .models import ChatSession, ChatMessage, Reaction, AccessRequest, FeedbackReason, MessageFeedback
 from ai_core.serializers import CountrySerializer, AdvisorSerializer
 from ai_core.models import Advisor, Country
+from suggestions.models import ChatSuggestion
+from suggestions.utils import top5_related
 
 User = get_user_model()
 
@@ -45,9 +47,9 @@ class ReactionSerializer(serializers.ModelSerializer):
         if reason not in valid:
             raise serializers.ValidationError({"reason": f"Invalid reason for '{data['reaction']}'."})
 
-        # if they chose “Other…”, require a non-empty comment
+        # if they chose "Other…", require a non-empty comment
         if reason in {Reaction.LIKE_OTHER, Reaction.DIS_OTHER} and not comment:
-            raise serializers.ValidationError({"comment": "Please explain what “Other…” means."})
+            raise serializers.ValidationError({"comment": "Please explain what \"Other…\" means."})
 
         return data
 
@@ -77,6 +79,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     feedback_reason_counts  = serializers.SerializerMethodField()
     user_feedback           = serializers.SerializerMethodField()
     html_content            = serializers.CharField(read_only=True)
+    suggestions             = serializers.SerializerMethodField()
 
     class Meta:
         model = ChatMessage
@@ -84,7 +87,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
             "id", "session", "role", "content", "html_content", "timestamp",
             "likes_count", "dislikes_count", "user_reaction",
             "reaction_reason_counts", "user_reaction_detail",
-            "feedback_reason_counts", "user_feedback",
+            "feedback_reason_counts", "user_feedback", "suggestions",
             ]
         read_only_fields = ["id", "session", "role", "timestamp"]
 
@@ -142,6 +145,38 @@ class ChatMessageSerializer(serializers.ModelSerializer):
             "additional_comments": fb.additional_comments,
         }
 
+    def get_suggestions(self, obj):
+        """
+        1.  Try vector recall (top-k related FAQs).
+        2.  If fewer than 5, pad with ChatSuggestion rows.
+        """
+        if obj.role != "assistant" or not obj.content.strip():
+            return []
+
+        # ── 1. Embed the current answer heading / first 400 chars ──
+        #     (Use whichever encoder you rely on for Free tier.)
+        try:
+            vector_hits = top5_related(obj.content[:400])   # -> list[float]       # -> list[str]
+        except Exception:
+            vector_hits = []      # TEI down, etc.
+
+        # ── 2. If less than 5, pad with saved ChatSuggestion rows ──
+        if len(vector_hits) < 5:
+            pad_needed = 5 - len(vector_hits)
+            fallback = (
+                ChatSuggestion.objects
+                .filter(session=obj.session)
+                .order_by("rank")
+                .values_list("text", flat=True)[: pad_needed]
+            )
+            # keep order: vector hits first, then fallback
+            combined = list(vector_hits) + [
+                t for t in fallback if t not in vector_hits
+            ]
+            return combined[:5]
+
+        return vector_hits[:5]
+
     def to_representation(self, instance):
         rep = super().to_representation(instance)
         request = self.context.get("request")
@@ -153,7 +188,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
 
 class AccessRequestSerializer(serializers.ModelSerializer):
     """
-    Shows who’s requested access to a private session.
+    Shows who's requested access to a private session.
     """
     requester = serializers.PrimaryKeyRelatedField(read_only=True)
 

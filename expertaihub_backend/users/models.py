@@ -21,6 +21,7 @@ class CustomUserManager(BaseUserManager):
         return user
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
+    username = models.SlugField(max_length=32, unique=True)
     email = models.EmailField(unique=True)
     full_name = models.CharField(max_length=255)
     is_active = models.BooleanField(default=False)  # starts as inactive for email verification

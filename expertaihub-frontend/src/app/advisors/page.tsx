@@ -312,7 +312,9 @@ export default function AdvisorsPage() {
                 <button
                   onClick={() =>
                     advisor.is_active &&
-                    router.push(`/home/?advisor=${advisor.slug}`)
+                    router.push(
+                      `/home/?advisor=${advisor.slug}&country=${advisor.country}`
+                    )
                   }
                   disabled={!advisor.is_active}
                   className="mt-auto px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg

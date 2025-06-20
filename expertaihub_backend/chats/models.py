@@ -99,6 +99,15 @@ class ChatSession(models.Model):
     def __str__(self):
         return self.title or str(self.session_id)
     
+    @property
+    def niche(self) -> str:
+        """
+        “niche” is whatever slug you gave the Advisor
+        (immigration, grant-writing, real-estate, …).
+        Fallback keeps the old behaviour.
+        """
+        return (self.advisor.slug if self.advisor else "immigration").lower()
+    
 
 
 
