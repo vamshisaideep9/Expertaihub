@@ -7,6 +7,7 @@ from dateparser.search import search_dates
 
 from ai_core.llm.llm_client_free import ask_openai, client, DEFAULT_REASONING_EFFORT
 from ai_core.rag.retriever_free import get_retriever
+from ai_core.rag.retriever_openai import get_retriever_openai
 from ai_core.prompts.prompts import (
     rephrase_prompt,
     intent_prompt,
@@ -242,23 +243,42 @@ def retrieve_context(state: Dict[str, Any]) -> Dict[str, Any]:
     query = state.get("clean_question", state.get("question", "")).strip()
 
     # 1) Pull retrieval params out of state
+    index = state.get("retriever_index")
     niche = state.get("niche", "immigration")
     country = state.get("country", "usa")
+    if index:
+        parts = index.split("_", 1)
+        if len(parts) == 2:
+            niche, country = parts[0], parts[1]
+        else:
+            niche = index
     k = 15
     recency_days = state.get("recency_days", None)  # None → no cutoff
     start_date = state.get("start_date", None)   # ISO str or None
     end_date = state.get("end_date", None)     # ISO str or None
 
     # 2) Instantiate the retriever with date windows & dedupe
-    retriever = get_retriever(
-        niche,
-        country,
-        k=k,
-        recency_days=recency_days,
-        dedupe=True,
-        start_date=start_date,
-        end_date=end_date,
-    )
+    tier = (state.get("tier") or "free").lower()
+    if tier == "free":
+        retriever = get_retriever(
+            niche,
+            country,
+            k=k,
+            recency_days=recency_days,
+            dedupe=True,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    else:
+        retriever = get_retriever_openai(
+            niche,
+            country,
+            k=k,
+            recency_days=recency_days,
+            dedupe=True,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
     # 3) Fetch the top-k chunks
     docs = retriever.invoke(query)
