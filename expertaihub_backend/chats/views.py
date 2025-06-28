@@ -16,7 +16,7 @@ from .serializers import ChatMessageSerializer, ChatSessionSerializer, MessageFe
 from ai_core.models import Advisor, Country
 from membership.models import MonthlyUsage
 from rest_framework.decorators import action
-from ai_core.langgraph.workflows.workflow_free import get_immigration_graph
+from ai_core.langgraph.workflows import get_graph_for_tier
 from ai_core.llm.llm_client_free import ask_openai
 
 
@@ -45,8 +45,6 @@ logo_path = finders.find("logo-dark.png")
 font_path = finders.find("fonts/Cormorant-Regular.ttf")
 
 logger = logging.getLogger(__name__)
-
-GRAPH = get_immigration_graph()
 
 
 class IsSessionOwner(permissions.BasePermission):
@@ -369,7 +367,8 @@ class ChatSessionStreamView(APIView):
                 logger.info(
                     f"[StreamView] invoking graph {{'q': {question}, 'tier': {tier}, 'niche': {niche}}}"
                 )
-                result = await sync_to_async(GRAPH.invoke)({           # ⬅️ CHANGED
+                graph = get_graph_for_tier(tier)
+                result = await sync_to_async(graph.invoke)({
                     "session_id": session.session_id,
                     "question"  : question,
                     "tier"      : tier,

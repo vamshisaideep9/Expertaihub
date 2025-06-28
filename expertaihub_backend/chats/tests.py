@@ -22,9 +22,10 @@ class StreamSuggestionTests(TestCase):
         self.client.force_authenticate(self.user)
         self.session = ChatSession.objects.create(user=self.user, slug="test-session")
 
-    @patch("chats.views.graph.invoke")
-    def test_stream_stores_related_queries(self, mock_invoke):
-        mock_invoke.return_value = {
+    @patch("chats.views.get_graph_for_tier")
+    def test_stream_stores_related_queries(self, mock_get_graph):
+        mock_graph = mock_get_graph.return_value
+        mock_graph.invoke.return_value = {
             "answer": "Done",
             "related_queries": [f"Q{i}" for i in range(5)],
         }
@@ -39,9 +40,10 @@ class StreamSuggestionTests(TestCase):
         body = b"".join(resp.streaming_content).decode()
         self.assertIn("Q0", body)
 
-    @patch("chats.views.graph.invoke")
-    def test_stream_does_not_duplicate_suggestions(self, mock_invoke):
-        mock_invoke.return_value = {
+    @patch("chats.views.get_graph_for_tier")
+    def test_stream_does_not_duplicate_suggestions(self, mock_get_graph):
+        mock_graph = mock_get_graph.return_value
+        mock_graph.invoke.return_value = {
             "answer": "Ok",
             "related_queries": ["A", "B", "C"],
         }
