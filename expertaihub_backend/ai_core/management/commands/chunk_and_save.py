@@ -1,16 +1,19 @@
 from django.core.management.base import BaseCommand, CommandError
-from ai_core.pipeline.chunk_and_save import chunk_and_save
+from ai_core.pipeline.chunk_and_save import chunk_and_save   # the function you just edited
 
 class Command(BaseCommand):
-    help = (
-        "Clean & split RawDocument.content into DocumentChunk rows, "
-        "skipping any documents that haven’t changed since last run."
-    )
+    help = "Chunk RawDocuments and save DocumentChunks"
 
-    def handle(self, *args, **options):
-        self.stdout.write(self.style.MIGRATE_HEADING("▶ Starting chunk_and_save…"))
-        try:
-            chunk_and_save()
-        except Exception as e:
-            raise CommandError(f"chunk_and_save failed: {e}")
-        self.stdout.write(self.style.SUCCESS("✅ chunk_and_save completed successfully"))
+    def add_arguments(self, parser):
+        parser.add_argument("advisor_slug",  help="e.g. immigration")
+        parser.add_argument("country_name",  help="e.g. usa")
+        parser.add_argument("--force", action="store_true",
+                            help="Chunk even if file_hash unchanged")
+
+    def handle(self, *args, **opts):
+        advisor = opts["advisor_slug"].lower()
+        country = opts["country_name"].lower()
+        force   = opts["force"]
+
+        # call the pipeline function with filters
+        chunk_and_save(advisor=advisor, country=country, force=force)

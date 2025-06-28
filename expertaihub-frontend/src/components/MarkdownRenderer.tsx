@@ -37,14 +37,16 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
             <table
               {...props}
               className="
-                min-w-full
-                table-auto
-                border-collapse
-                border border-gray-400
-                rounded-lg
-                bg-[#fcfbf7]
-                font-cormorant
-                text-[1.1rem]
+                w-max            /* grow as wide as the content needs           */
+        lg:w-full        /* but clamp back to the viewport ≥1024 px     */
+        table-auto
+        border-collapse
+        border border-gray-400
+        rounded-lg
+        bg-[#fcfbf7]
+        font-cormorant
+        text-[1.1rem]
+        whitespace-nowrap   /* keep each cell on one line 
               "
             />
           </div>

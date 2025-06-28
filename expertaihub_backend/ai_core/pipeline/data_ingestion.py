@@ -9,6 +9,13 @@ import subprocess
 import logging
 from pathlib import Path
 from datetime import datetime
+from immigration.usa.ml import (
+    classify_doc_type,
+    derive_jurisdiction_path,
+    run_ner,
+    compute_version_hash,
+    extract_urls, extract_domains, clean_ner_entities
+)
 
 # ─── Django bootstrap ─────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -75,31 +82,7 @@ def ingest(niche_slug: str = "immigration", country_name: str = "usa"):
             skipped += 1
             continue
 
-        # Prepare all the fields for a new RawDocument
-        rel_path = str(path.relative_to(Path(settings.BASE_DIR) / "documents"))
-        category = str(path.relative_to(docs_root)).rsplit(os.sep, 1)[0]
-        filename = path.name
-        commit   = git_commit_for(path)
-        new_meta = {
-            "file_hash":     file_hash,
-            "git_commit":    commit,
-            "last_modified": datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
-            "file_type":     path.suffix.lower().lstrip("."),
-        }
-
-        # Create the RawDocument
-        rd = RawDocument.objects.create(
-            source_path=rel_path,
-            category=category,
-            filename=filename,
-            metadata=new_meta,
-            content="",     # will fill next
-            advisor=advisor,
-            country=country,
-        )
-        logger.info(f"Created RawDocument for {rel_path}")
-
-        # Extract and save full-text
+        # Extract and save full-text (do this before metadata extraction)
         try:
             suffix = path.suffix.lower()
             if suffix == ".json":
@@ -130,13 +113,46 @@ def ingest(niche_slug: str = "immigration", country_name: str = "usa"):
                 pages = loader.load()
                 text = "\n\n".join(p.page_content for p in pages)
 
-            rd.content = text
-            rd.save(update_fields=["content"])
-            logger.info(f"Ingested content for {rel_path}")
-            processed += 1
-
         except Exception as e:
-            logger.warning(f"Failed to extract text for {rel_path}: {e}")
+            logger.warning(f"Failed to extract text for {path.name}: {e}")
+            text = ""
+
+        # Prepare all the fields for a new RawDocument
+        rel_path = str(path.relative_to(Path(settings.BASE_DIR) / "documents"))
+        category = str(path.relative_to(docs_root)).rsplit(os.sep, 1)[0]
+        filename = path.name
+        commit   = git_commit_for(path)
+        doc_type = classify_doc_type(text, filename)
+        jurisdiction_path = derive_jurisdiction_path(text)
+        version_hash = compute_version_hash(text)
+        ner_entities = clean_ner_entities(run_ner(text[:5000]))
+        urls = list(set(extract_urls(text)))
+        domains = list(set(extract_domains(urls)))
+        new_meta = {
+            "file_hash":     file_hash,
+            "git_commit":    commit,
+            "last_modified": datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
+            "file_type":     path.suffix.lower().lstrip("."),
+            "urls": urls,
+            "domains": domains,
+            "doc_type" : doc_type,
+            "jurisdiction_path": jurisdiction_path,
+            "ner_entities": ner_entities,
+            "version_hash": version_hash,
+        }
+
+        # Create the RawDocument
+        rd = RawDocument.objects.create(
+            source_path=rel_path,
+            category=category,
+            filename=filename,
+            metadata=new_meta,
+            content=text,
+            advisor=advisor,
+            country=country,
+        )
+        logger.info(f"Created RawDocument for {rel_path}")
+        processed += 1
 
     logger.info(f"✔️ Ingestion complete. Processed={processed}, Skipped={skipped}")
 

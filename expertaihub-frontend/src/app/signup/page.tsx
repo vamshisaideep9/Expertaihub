@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Eye, EyeOff, Mail, User, Lock } from "lucide-react"
+import { Suspense } from "react"
 
-export default function SignupPage() {
+function SignupClient() {
   const router   = useRouter()
   const initialQ = useSearchParams().get("question") || ""
   const [form, setForm]       = useState({ email: "", full_name: "", password: "" })
@@ -132,6 +133,14 @@ export default function SignupPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <SignupClient />
+    </Suspense>
   )
 }
 

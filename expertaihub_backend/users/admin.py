@@ -44,7 +44,7 @@ class MonthlyUsageAdmin(admin.ModelAdmin):
 #ai_core
 @admin.register(Advisor)
 class AdvisorAdmin(admin.ModelAdmin):
-    list_display = ('name', 'slug', 'description', 'is_active')
+    list_display = ('name', 'slug', 'description', 'retriever_index', 'default_tier', 'is_active')
 
 @admin.register(Country)
 class CountryAdmin(admin.ModelAdmin):

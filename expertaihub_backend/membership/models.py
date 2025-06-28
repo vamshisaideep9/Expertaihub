@@ -5,13 +5,13 @@ User = get_user_model()
 
 class Membership(models.Model):
     FREE    = 'free'
-    PRO     = 'pro'
-    PREMIUM = 'premium'
+    PLUS     = 'plus'
+    PROPLUS = 'pro+'
 
     MEMBERSHIP_CHOICES = [
         (FREE,    'Free'),
-        (PRO,     'Pro'),
-        (PREMIUM, 'Premium'),
+        (PLUS,     'Plus'),
+        (PROPLUS, 'Pro+'),
     ]
 
     user            = models.OneToOneField(

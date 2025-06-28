@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 VALID_INTENTS = {
     "greeting", "ask_form_info", "generate_form",
     "state_law_query", "followup", "simple_info", "summary",
-    "unclear", "not_in_docs"
+    "unclear", "not_in_docs", "ask_forecast"
 }
 
 # Intent detection patterns
@@ -48,6 +48,8 @@ SIMPLE_YEAR_RANGE_RE = re.compile(r"\b(\d{4})\s*[-–—]\s*(\d{4})\b")
 
 # Safety patterns
 RISKY_PATTERN = re.compile(r"\b(overstay|expired visa|illegal|fake marriage|stay.*after.*visa|falsify|unlawful)\b", re.IGNORECASE)
+
+FORECAST_RE = re.compile(r"\b(forecast|predict|projection|FY\s*2026)\b", re.IGNORECASE)
 
 # =============================================================================
 # DATE PARSING FUNCTIONS
@@ -135,7 +137,9 @@ def rephrase_input(state: Dict[str, Any]) -> Dict[str, Any]:
 def detect_intent(state: Dict[str, Any]) -> Dict[str, Any]:
     """Detect the intent of the user's question."""
     raw_q = state["question"].strip()
+    logger.debug(f"[detect_intent] raw question: {raw_q!r}")
     clean_q = state.get("clean_question", raw_q).strip()
+    logger.debug(f"[detect_intent] clean question: {clean_q!r}")
     mem = MemoryStore.load_for(state["session_id"])
 
     # ─── date overrides ──────────────────────────────────────────────────────
@@ -168,6 +172,11 @@ def detect_intent(state: Dict[str, Any]) -> Dict[str, Any]:
         state["intent"] = "summary"
         return state
     
+    if FORECAST_RE.search(clean_q):
+        logger.info("[detect_intent] Forecast trigger matched")
+        state["intent"] = "ask_forecast"
+        return state
+    
     if re.search(r"\b(fee|cost|price|charge)\b", raw_q, re.IGNORECASE):
         state["intent"] = "simple_info"
         return state
@@ -187,8 +196,10 @@ def detect_intent(state: Dict[str, Any]) -> Dict[str, Any]:
     )
     prompt_str = intent_prompt.format(history=history, question=clean_q)
     out = ask_openai(prompt_str, stream=False)
+    logger.debug(f"[detect_intent] intent LLM output: {out!r}")
     intent = (out.strip().lower() if isinstance(out, str)
               else "".join(out).strip().lower())
+    logger.info(f"[detect_intent] resolved intent: {intent}")
     state["intent"] = intent if intent in VALID_INTENTS else "unclear"
     return state
 
@@ -234,7 +245,7 @@ def retrieve_context(state: Dict[str, Any]) -> Dict[str, Any]:
     niche = state.get("niche", "immigration")
     country = state.get("country", "usa")
     k = 15
-    recency_days = state.get("recency_days", 365)  # None → no cutoff
+    recency_days = state.get("recency_days", None)  # None → no cutoff
     start_date = state.get("start_date", None)   # ISO str or None
     end_date = state.get("end_date", None)     # ISO str or None
 
@@ -250,25 +261,14 @@ def retrieve_context(state: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     # 3) Fetch the top-k chunks
-    docs = retriever.get_relevant_documents(query)
+    docs = retriever.invoke(query)
 
     # 4) Strip out empty text
-    filtered = [d.page_content.strip() for d in docs if d.page_content.strip()]
-    state["docs"] = filtered
+    state['docs'] = [d.page_content.strip() for d in docs if d.page_content.strip()]
 
-    # 5) Keyword‐based relevance check (fallback to no‐retrieval if none match)
-    stopwords = {"what", "in", "on", "at", "the", "a", "an", "for", "to", "of", "if", "about", "how", "do", "i"}
-    keywords = [w for w in re.findall(r"\b\w+\b", query.lower()) if w not in stopwords]
-    found = any(any(kw in chunk.lower() for kw in keywords) for chunk in filtered)
-
-    if not found:
-        state["docs"] = []
-        state["used_retrieval"] = False
-        logger.warning(
-            "[retrieve_context] No keywords matched in retrieved docs → triggering denial"
-        )
-    else:
-        logger.info("[retrieve_context] Keywords matched in retrieved docs")
+    state["used_retrieval"] = bool(state["docs"])
+    if not state["docs"]:
+            logger.warning("[retrieve_context] no documents returned from RAG")
 
     return state
 
@@ -355,7 +355,7 @@ def generate_response(state: Dict[str, Any]) -> Dict[str, Any]:
         question=state["question"],
         form_name=state.get("form_name", "")
     )
-    logger.debug(f"[generate_response] Prompt ({len(prompt)} chars)")
+    logger.debug(f"[generate_response] Prompt length={len(prompt)}; docs_count={len(docs)}")
 
     try:
         # 4) Call the LLM

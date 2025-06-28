@@ -26,7 +26,6 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Preferences", href: "/account/preferences", icon: Settings2 },
   { label: "Personalize", href: "/account/personalize", icon: Wand2 },
   { label: "Purchases", href: "/account/purchases", icon: CreditCard },
-  { label: "Settings", href: "/account/settings", icon: Settings },
 ];
 
 export default function SettingsSideNavBar() {

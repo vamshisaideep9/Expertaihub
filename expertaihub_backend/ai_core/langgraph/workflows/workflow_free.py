@@ -1,6 +1,6 @@
 # ai_core/langgraph/graphs.py
 
-from typing import Optional, List, TypedDict
+from typing import Optional, List, TypedDict, Literal
 from langgraph.graph import StateGraph
 from langchain_core.memory import BaseMemory
 
@@ -24,10 +24,14 @@ from ai_core.langgraph.nodes.nodes import (
     generate_summary
 )
 from ai_core.langgraph.nodes.related_free import RelatedFree
+from ai_core.langgraph.nodes.cfg import inject_cfg
 
 class GraphState(TypedDict, total=False):
     session_id: str
     question: str
+    tier: Literal["free", "plus", "pro+"]   # injected at API layer
+    niche: str                              # e.g. "immigration-usa"
+    country: Optional[str] 
     clean_question: Optional[str]
     intent: Optional[str]
     is_safe: Optional[bool]
@@ -36,19 +40,18 @@ class GraphState(TypedDict, total=False):
     used_retrieval: bool
     answer: Optional[str]
     related_queries: List[str]
-    niche: Optional[str]
-    country: Optional[str]
     # date‐filter fields
     recency_days: Optional[int]
     start_date: Optional[str]          # ISO date
     end_date: Optional[str]            # ISO date
     memory: Optional[BaseMemory]
 
-def get_free_immigration_graph():
+def get_immigration_graph():
     g = StateGraph(GraphState)
 
     # ─── register nodes ────────────────────────────────────────────────────
     g.add_node("load_memory",       load_memory_node)
+    g.add_node("inject_cfg",        inject_cfg)
     g.add_node("add_user_message",  add_user_message_node)
     g.add_node("rephrase_input",    rephrase_input)
     g.add_node("detect_intent",     detect_intent)
@@ -70,7 +73,8 @@ def get_free_immigration_graph():
 
     # ─── linear flow ───────────────────────────────────────────────────────
     g.set_entry_point("load_memory")
-    g.add_edge("load_memory",      "add_user_message")
+    g.add_edge("load_memory",      "inject_cfg")          # ③ first call cfg
+    g.add_edge("inject_cfg",       "add_user_message")  
     g.add_edge("add_user_message", "rephrase_input")
     g.add_edge("rephrase_input",   "detect_intent")
     g.add_edge("detect_intent",    "safety_guard")
@@ -93,6 +97,7 @@ def get_free_immigration_graph():
             "simple_info":    "simple_response",   # new branch
             "summary":        "generate_summary",  # new branch
             # everything else → full RAG
+            "ask_forecast":    "retrieve_context",
             "ask_form_info":   "retrieve_context",
             "state_law_query": "retrieve_context",
             "followup":        "retrieve_context",

@@ -1,0 +1,18 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# install deps first for build-cache
+COPY package*.json ./
+RUN npm install
+
+# copy rest of the app
+COPY . .
+
+# dev server needs to listen on every interface
+ENV HOST 0.0.0.0
+ENV WATCHPACK_POLLING true
+ENV CHOKIDAR_USEPOLLING true
+
+EXPOSE 3000
+CMD ["npm", "run", "dev"]

@@ -60,6 +60,10 @@ INSTALLED_APPS = [
     "membership",
     "chats",
     "suggestions",
+
+
+    #nices
+    'immigration',
     
 ]
 
@@ -120,6 +124,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:3001",
     "http://127.0.0.1:8000",
+    "http://localhost:8000",
     "http://localhost:3002",
     # Add your production frontend URL here when deploying
     # "https://your-production-domain.com"
@@ -257,11 +262,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 ## CELERY - REDIS
-TIME_ZONE = "Asia/Kolkata"      #  ⬅️  change to whatever 00:30 “mid-night” means for you
+TIME_ZONE = "Asia/Kolkata"      #  ⬅️  change to whatever 00:30 "mid-night" means for you
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = False 
 
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 
 
@@ -296,6 +301,17 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
+        # Logger for ml.py
+        "expertaihub_backend.immigration.usa.ml": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        "ai_core.management.commands.backfill_metadata": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
     },
     "root": {
         "handlers": ["console"],
@@ -316,3 +332,6 @@ MONTHLY_USAGE_LIMIT = 15
 APPEND_SLASH=False
 
 
+
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", None)

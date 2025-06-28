@@ -1,7 +1,7 @@
 // src/app/home/page.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Send, Mic, Search, ArrowUpLeft, Star, StopCircle } from "lucide-react";
 import apiPrivate from "@/lib/apiprivate";
@@ -16,7 +16,8 @@ const DEFAULT_SUGGESTIONS = [
   "What are the steps to bring my spouse to the USA?",
 ];
 
-export default function HomePage() {
+function HomeClient() {
+  const search = useSearchParams();
   const [question, setQuestion] = useState("");
   const [processing, setProcessing] = useState(false);
   const [showSug, setShowSug] = useState(false);
@@ -24,7 +25,6 @@ export default function HomePage() {
 +     1)  Pick advisor & country once – then hold them in state
 +         (query-params override; fallback to Immigration / USA)
 +     ----------------------------------------------------------- */
-  const search     = useSearchParams();
   const [advisorName] = useState(
     (search.get("advisor")  ?? "immigration").toLowerCase()
   );
@@ -319,5 +319,13 @@ export default function HomePage() {
         </footer>
       </main>
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <HomeClient />
+    </Suspense>
   );
 }

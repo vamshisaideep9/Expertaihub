@@ -198,7 +198,7 @@ export default function ResponsiveSidebar() {
                   </div>
 
                   <div className="flex flex-col space-y-1 px-4 text-sm text-gray-700 dark:text-gray-300">
-                    <DropdownItem icon={<CircleUser size={15}/>} label="My Account" onClick={() => router.push('/account/details/')} />
+                    <DropdownItem icon={<CircleUser size={15} />} label="My Account" onClick={() => router.push('/account/details/')} />
                     <DropdownItem icon={<Settings2 size={15}/>} label="Preferences" onClick={() => router.push('/account/details/')} />
                     <DropdownItem icon={<Wand2 size={15}/>} label="Personalize" onClick={() => router.push('/account/details/')} />
                     <DropdownItem icon={<CreditCard size={15}/>} label="Purchases" onClick={() => router.push('/account/details/')} />

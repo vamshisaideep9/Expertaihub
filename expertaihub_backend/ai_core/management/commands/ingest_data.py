@@ -1,7 +1,7 @@
 # ai_core/management/commands/ingest_data.py
 
 from django.core.management.base import BaseCommand, CommandError
-from ai_core.pipeline.data_ingestion import ingest
+from expertaihub_backend.ai_core.pipeline.data_ingestion import ingest
 
 class Command(BaseCommand):
     help = 'Ingests data into the RawDocument model for a given niche and country'

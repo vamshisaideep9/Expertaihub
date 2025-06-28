@@ -14,7 +14,12 @@ DEFAULT_MODEL            = "o4-mini"
 DEFAULT_REASONING_EFFORT = "medium"
 DEFAULT_MAX_TOKENS       = 60000
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+_api_key = os.getenv("OPENAI_API_KEY")
+if not _api_key:
+    logger.warning("OPENAI_API_KEY missing—ask_openai will fail until it's set.")
+    client = None
+else:
+    client = OpenAI(api_key=_api_key)
 _OpenAIResult = Union[str, Generator[str, None, None]]
 
 def _stream_to_generator(resp_stream: Iterable[Response]) -> Generator[str, None, None]:

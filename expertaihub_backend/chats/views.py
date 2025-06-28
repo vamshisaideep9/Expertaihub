@@ -16,7 +16,7 @@ from .serializers import ChatMessageSerializer, ChatSessionSerializer, MessageFe
 from ai_core.models import Advisor, Country
 from membership.models import MonthlyUsage
 from rest_framework.decorators import action
-from ai_core.langgraph.workflows.workflow_free import get_free_immigration_graph
+from ai_core.langgraph.workflows.workflow_free import get_immigration_graph
 from ai_core.llm.llm_client_free import ask_openai
 
 
@@ -46,7 +46,7 @@ font_path = finders.find("fonts/Cormorant-Regular.ttf")
 
 logger = logging.getLogger(__name__)
 
-graph = get_free_immigration_graph()
+GRAPH = get_immigration_graph()
 
 
 class IsSessionOwner(permissions.BasePermission):
@@ -248,6 +248,14 @@ class ChatSessionStreamView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsSessionOwner]
     authentication_classes = [AsyncJWTAuthentication]
 
+    def _get_user_tier(self, user) -> str:
+        from membership.models import Membership
+        try:
+            tier = user.membership.membership_type
+        except Membership.DoesNotExist:
+            tier = Membership.objects.create(user=user).membership_type  # default='free'
+        return tier
+
     async def dispatch(self, request, *args, **kwargs):
         # For POST, do DRF auth/perm checks synchronously
         if request.method == "POST":
@@ -353,21 +361,27 @@ class ChatSessionStreamView(APIView):
         async def stream_response():
             full_answer = ""
             docs = []
-            suggestions = []
             try:
                 # invoke your LLM/RAG pipeline
                 country = await sync_to_async(lambda: session.country.name.lower() if session.country else "usa")()
-                niche   = await sync_to_async(lambda: session.niche)()  
-                result  = await sync_to_async(graph.invoke)({
+                niche   = await sync_to_async(lambda: session.niche)()
+                tier = await sync_to_async(self._get_user_tier)(request.user)
+                logger.info(
+                    f"[StreamView] invoking graph {{'q': {question}, 'tier': {tier}, 'niche': {niche}}}"
+                )
+                result = await sync_to_async(GRAPH.invoke)({           # ⬅️ CHANGED
                     "session_id": session.session_id,
-                    "question": question,
-                    "niche": niche,
-                    "country": country,
+                    "question"  : question,
+                    "tier"      : tier,
+                    "niche"     : niche,
+                    "country"   : country,   # temp; cfg node will override later
                 })
+                logger.info(f"[StreamView] graph result keys: {list(result.keys())}")
                 answer = (result.get("answer") or "").strip()
                 docs = result.get("docs", [])  # Get docs from result
                 related = result.get("related_queries", [])
-                suggestions = await sync_to_async(self._create_suggestions)(session, related)
+                logger.info(f"[StreamView] received answer length={len(answer)}; docs_count={len(docs)}; suggestions={related[:3]}")
+               
 
                 # Record usage only if RAG was used (docs present)
                 if docs:
@@ -410,7 +424,7 @@ class ChatSessionStreamView(APIView):
             await sync_to_async(session.save)(update_fields=["completed", "updated"])
 
             # send metadata as final JSON
-            yield json.dumps({"docs": docs, "suggestions": suggestions})
+           # yield json.dumps({"docs": docs, "suggestions": suggestions})
 
         return StreamingHttpResponse(stream_response(), content_type="text/plain; charset=utf-8")
                                      

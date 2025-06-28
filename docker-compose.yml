@@ -1,47 +1,87 @@
-version: '3.9'
-
 services:
+  # ────────────────────────────────
   db:
     image: postgres:15
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB:       ${DB_NAME:-postgres}
+      POSTGRES_USER:     ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # ────────────────────────────────
   redis:
     image: redis:7
+    restart: unless-stopped
 
+  # ────────────────────────────────
+  qdrant:                       # <─ NEW (already had it, just keeping it first)
+    image: qdrant/qdrant:latest
+    deploy:
+      resources:
+        limits:
+          memory: 1g 
+    restart: unless-stopped
+    ports:
+      - "6333:6333"             # REST + dashboard
+      - "6334:6334"             # gRPC
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+
+  # ────────────────────────────────
   backend:
     build: ./expertaihub_backend
-    command: gunicorn expertaihub_backend.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+    command: >
+      uvicorn expertaihub_backend.asgi:application
+      --host 0.0.0.0 --port 8000
+      --reload --reload-dir /app --reload-delay 0.5
+    env_file: .env
+    environment:
+      - QDRANT_URL=http://qdrant:6333   # <─ tell Django/LangChain where Qdrant lives
     volumes:
       - ./expertaihub_backend:/app
-    env_file: .env
     depends_on:
       - db
       - redis
+      - qdrant                       # <─ wait for Qdrant too
     ports:
       - "8000:8000"
 
+  # ────────────────────────────────
   celery:
     build: ./expertaihub_backend
-    command: celery -A expertaihub_backend.celery:app worker -l info
+    command: celery -A expertaihub_backend.celery:app worker -l info -P solo -c 1
+    env_file: .env
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0   # <─ needed by tasks that touch vector-store
     volumes:
       - ./expertaihub_backend:/app
-    env_file: .env
-    depends_on:
-      - db
-      - redis
-
-  frontend:
-    build: ./expertaihub-frontend
-    env_file: .env
     depends_on:
       - backend
+      - redis
+      - qdrant
+    # user: "1000:1000"                # uncomment to silence “superuser” warning
+
+  # ────────────────────────────────
+  frontend:
+    build:
+      context: ./expertaihub-frontend
+      dockerfile: Dockerfile.dev
+    command: npm run dev
     ports:
-      - "3000:80"
+      - "3000:3000"
+    volumes:
+      - ./expertaihub-frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:

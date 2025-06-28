@@ -294,6 +294,7 @@ def user_me_view(request):
     return Response({
         "id":            user.id,
         "full_name":     user.full_name,
+        "username":      user.username,
         "email":         user.email,
         "membership":    membership_data,
     })

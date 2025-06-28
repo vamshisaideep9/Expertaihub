@@ -24,6 +24,16 @@ class Advisor(models.Model):
         related_name="advisors",
         null=True, blank=True
     )
+    retriever_index = models.CharField(
+        max_length=100,
+        default="immigration_usa",          # seed value for existing rows
+        help_text="Name of the Qdrant collection / index"
+    )
+    default_tier = models.CharField(
+        max_length=10,
+        default="free",                     # 'free' | 'plus' | 'pro+'
+        help_text="Tier used when caller didn’t pass one"
+    )
 
     def save(self, *args, **kwargs):
         if not self.slug:

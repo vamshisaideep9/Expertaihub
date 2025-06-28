@@ -173,6 +173,7 @@ cython_debug/
 .pypirc 
 
 expertaihub_backend/documents
-expertaihub_backend/suggestions/vectorstores/
 expertaihub_backend/ai_core/rag/vectorstores/free/immigration/usa/index.faiss
 expertaihub_backend/ai_core/rag/vectorstores/free/immigration/usa/index.pkl
+
+qdrant_storage

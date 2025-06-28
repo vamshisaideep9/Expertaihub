@@ -27,117 +27,49 @@ from openai import OpenAI
 @shared_task
 def fetch_visa_bulletin():
     """
-    1) Use OpenAI web search to locate the Visa Bulletin PDF link for this month.
+    1) Build the URL for the current month’s Visa Bulletin.
     2) Download the PDF and save to:
        <project_root>/documents/immigration/usa/visa_bulletin/<YYYY_MM>/.
     """
-    today = date.today()
-    
-    # Try current month first
-    year = today.year
-    month = today.month
-    month_name = calendar.month_name[month]
-    
-    # If we're in the first week of the month, try previous month's bulletin
-    if today.day <= 7:
-        if month == 1:
-            year = today.year - 1
-            month = 12
-        else:
-            month = today.month - 1
-        month_name = calendar.month_name[month]
-    
-    stamp = f"{year}_{month:02d}"
-    
-    # First try direct URL pattern that State Department uses
-    base_url = "https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin"
-    direct_url = f"{base_url}/{year}/visa-bulletin-for-{month_name.lower()}-{year}.html"
-    
-    try:
-        # Try to get the HTML page first
-        resp = requests.get(direct_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-        if resp.status_code == 200:
-            # If we get the HTML page, look for the PDF link
-            soup = BeautifulSoup(resp.text, "html.parser")
-            pdf_link = soup.find("a", text=lambda t: t and "View as Printer Friendly PDF" in t)
-            if pdf_link and pdf_link.get("href"):
-                pdf_url = pdf_link["href"]
-                if not pdf_url.startswith("http"):
-                    pdf_url = f"https://travel.state.gov{pdf_url}"
-            else:
-                pdf_url = None
-        else:
-            pdf_url = None
-    except Exception as e:
-        print(f"Failed to fetch direct URL {direct_url}: {e}")
-        pdf_url = None
-    
-    # If direct URL approach failed, try search
-    if not pdf_url:
-        # More flexible search query that includes variations
-        queries = [
-            f"site:travel.state.gov \"Visa Bulletin for {month_name} {year}\" filetype:pdf",
-            f"site:travel.state.gov \"{month_name} {year} Visa Bulletin\" filetype:pdf",
-            f"site:travel.state.gov \"Visa Bulletin {month_name} {year}\" filetype:pdf"
-        ]
-        
-        client = OpenAI()
-        
-        # Try each query variation
-        for query in queries:
-            try:
-                resp = client.responses.create(
-                    model="gpt-4.1",
-                    tools=[{"type": "web_search_preview", "search_context_size": "low"}],
-                    input=query
-                )
-                
-                # Search through the response
-                for item in resp.output:
-                    if item.type == "message":
-                        for node in item.content:
-                            for ann in getattr(node, "annotations", []):
-                                if ann.url.lower().endswith(".pdf"):
-                                    pdf_url = ann.url
-                                    break
-                            if pdf_url:
-                                break
-                    if pdf_url:
-                        break
-                        
-                if pdf_url:
-                    break
-                    
-            except Exception as e:
-                print(f"Search query '{query}' failed: {e}")
-                continue
-    
-    if not pdf_url:
-        raise RuntimeError(f"[Visa Bulletin] No PDF URL found for {month_name} {year} after trying direct URL and search queries")
-    
-    # Download the PDF
-    base = settings.DOCS_DIR
-    target = os.path.join(base, "visa_bulletin", stamp)
+    today   = date.today()
+    stamp   = f"{today.year}_{today.month:02d}"
+    base    = settings.DOCS_DIR
+    target  = os.path.join(base, "visa_bulletin", stamp)
     os.makedirs(target, exist_ok=True)
-    
-    filename = os.path.basename(pdf_url.split("?", 1)[0])
-    outpath = os.path.join(target, filename)
-    
-    try:
-        dl = requests.get(pdf_url, stream=True, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-        dl.raise_for_status()
-        if "pdf" not in dl.headers.get("Content-Type", "").lower():
-            raise RuntimeError(f"[Visa Bulletin] Expected PDF but got {dl.headers.get('Content-Type')}")
-        
-        with open(outpath, "wb") as f:
-            for chunk in dl.iter_content(8192):
-                if chunk:
-                    f.write(chunk)
-                    
-        return f"Saved Visa Bulletin {filename} to {outpath}"
-        
-    except Exception as e:
-        raise RuntimeError(f"[Visa Bulletin] Failed to download PDF: {e}")
+
+
+    month_name = calendar.month_name[today.month].lower()  #
+    url = (
+        f"https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin/"
+        f"{today.year}/visa-bulletin-for-{month_name}-{today.year}.html"
+    )
+
+    # 3️⃣ Scrape the page for the PDF link
+    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+    resp.raise_for_status()
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    link = soup.find("a", href=lambda h: h and h.endswith(".pdf"))
+    if not link:
+        raise RuntimeError(f"No PDF found on {url}")
+    href = link["href"]
+    pdf_url = href if href.startswith("http") else f"https://travel.state.gov{href}"
+
+    # 4️⃣ Download the PDF
+    fn      = os.path.basename(pdf_url)
+    outpath = os.path.join(target, fn)
+    dl = requests.get(pdf_url, stream=True)
+    dl.raise_for_status()
+    if "pdf" not in dl.headers.get("Content-Type", "").lower():
+        raise RuntimeError("Expected PDF content")
+    with open(outpath, "wb") as f:
+        for chunk in dl.iter_content(8192):
+            if chunk:
+                f.write(chunk)
+
+    return f"Saved Visa Bulletin {fn} to {outpath}"
+
 
 from datetime import datetime
 

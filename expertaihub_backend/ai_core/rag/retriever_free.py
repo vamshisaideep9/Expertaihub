@@ -1,196 +1,240 @@
+#!/usr/bin/env python
 """
-Lightweight Qdrant-lite retriever for "free-tier" vector-stores.
+retriever_free.py  –  Smart Qdrant retriever for the free tier.
 
-Usage
------
-    from retriever_free import get_retriever
-    r = get_retriever("immigration", "usa", k=5)
-    docs = r.get_relevant_documents("Can I expedite my I-130?")
+  ✓ Pure-HTTP (Cloud-friendly)
+  ✓ Automatic local-Docker fallback
+  ✓ Optional recency window (*effective_date*)
+  ✓ 3-step search flow  (recency ⟶ all-time ⟶ keyword-fallback + rerank)
+  ✓ Duplicate raw-document suppression
+  ✓ LRU-cached vector-store (clear with `_load_qdrant.cache_clear()`)
 """
 
 from __future__ import annotations
 
-import os
-from datetime import date, timedelta
-from functools import lru_cache
-from pathlib import Path
-from typing import List, Optional
-import sys
+import os, sys
+from datetime      import datetime, timedelta, timezone
+from functools     import lru_cache
+from typing        import List, Optional, Set, Tuple
 
-from langchain_core.documents import Document
+from langchain_core.documents  import Document
 from langchain_core.retrievers import BaseRetriever
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_qdrant import QdrantVectorStore
-from qdrant_client import QdrantClient
-from qdrant_client.http import models as qdj
+from langchain_huggingface     import HuggingFaceEmbeddings
+from langchain_qdrant          import QdrantVectorStore
+from qdrant_client             import QdrantClient
+from qdrant_client.http        import models as qdj
 
-# ────────────────────────────────────────────────────────────────
-# CONFIGURATION – adjust only these two constants if you move files
-# ────────────────────────────────────────────────────────────────
-BASE_STORE = Path(
-    r"c:/Users/vamsh/OneDrive/Desktop/ExpertAiHub/Expertaihub/"
-    r"expertaihub_backend/ai_core/rag/vectorstores/free"
-)
-EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-EMBED_BATCH = 256  # suitable for CPU; change if you have GPU
 
-# ────────────────────────────────────────────────────────────────
-# helpers
-# ────────────────────────────────────────────────────────────────
+# ────────────────────────────── Config ──────────────────────────────
+EMBED_MODEL   = "sentence-transformers/all-MiniLM-L6-v2"
+EMBED_BATCH   = 256
+LOCAL_URL     = "http://localhost:6333"
+DEBUG_RAG     = bool(os.getenv("DEBUG_RAG"))          # export DEBUG_RAG=1
+
+def _d(msg: str) -> None:
+    if DEBUG_RAG:
+        print(f"[RAG] {msg}", file=sys.stderr, flush=True)
+
+# single shared embedder (cached by HF transformers)
 def _embedder(device: str = "cpu") -> HuggingFaceEmbeddings:
     return HuggingFaceEmbeddings(
-        model_name=EMBED_MODEL,
-        model_kwargs={"device": device},
-        encode_kwargs={"batch_size": EMBED_BATCH},
+        model_name   = EMBED_MODEL,
+        model_kwargs = {"device": device},
+        encode_kwargs= {"batch_size": EMBED_BATCH},
     )
 
+def _iso_to_ts(iso: str) -> int:
+    dt = datetime.fromisoformat(iso.strip())
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
 
+# ───────────────────  Vector-store loader (LRU)  ────────────────────
 @lru_cache(maxsize=None)
-def _load_qdrant(niche: str, country: str) -> QdrantVectorStore:
+def _load_qdrant(niche: str, country: str) -> tuple[QdrantVectorStore, set[str]]:
     """
-    Open the local RocksDB collection <niche>_<country> and return
-    a LangChain Qdrant vector-store wrapper.
+    Open the collection and return (LC VectorStore, payload_keys_set).
+    Falls back to a local Docker instance if QDRANT_URL/QDRANT_LOCAL_PATH
+    are not supplied.
     """
-    try:
-        print(f"[Qdrant] _load_qdrant called with niche={niche}, country={country}", flush=True)
-        niche, country = niche.lower(), country.lower()
-        folder = BASE_STORE / niche / country
-        print(f"[Qdrant] Folder: {folder}", flush=True)
-        collection = f"{niche}_{country}"
+    collection = f"{niche.lower()}_{country.lower()}"
 
-        print("[Qdrant] Initializing QdrantClient...", flush=True)
-        client = QdrantClient(path=str(folder), prefer_grpc=True)
-        print("[Qdrant] QdrantClient initialized.", flush=True)
+    url     = os.getenv("QDRANT_URL", "").rstrip("/")
+    api_key = os.getenv("QDRANT_API_KEY") or None
+    path    = os.getenv("QDRANT_LOCAL_PATH") or None
 
-        
-        print("[Qdrant] Listing collections...", flush=True)
-        collections = client.get_collections()
-        print(f"[Qdrant] Collections: {[c.name for c in collections.collections]}", flush=True)
+    if url:                                               # Cloud / remote
+        client = QdrantClient(url=url, api_key=api_key,
+                              prefer_grpc=False, timeout=120)
+    elif path:                                            # Embedded RocksDB
+        client = QdrantClient(path=path, prefer_grpc=True)
+    else:                                                 # Local docker
+        client = QdrantClient(url=LOCAL_URL,
+                              prefer_grpc=False, timeout=120)
 
-        if collection not in {c.name for c in collections.collections}:
-            print(f"[Qdrant] Collection '{collection}' not found!", flush=True)
-            raise FileNotFoundError(
-                f'Qdrant collection "{collection}" not found in {folder}.\nRun the build-vector-store command first.'
-            )
+    coll_info   = client.get_collection(collection)
+    payload_map = set(coll_info.payload_schema or {})
+    _d(f"opened collection '{collection}'  keys={payload_map}")
 
-        print("[Qdrant] Returning Qdrant vector store.", flush=True)
-        return QdrantVectorStore(client=client,
-                      collection_name=collection,
-                      embedding=_embedder("cpu"))
-    except Exception as e:
-        print(f"[Qdrant][ERROR] Exception in _load_qdrant: {e}", file=sys.stderr, flush=True)
-        raise
+    vs = QdrantVectorStore(
+        client           = client,
+        collection_name  = collection,
+        embedding        = _embedder("cpu"),
+    )
+    return vs, payload_map
 
 
-# ────────────────────────────────────────────────────────────────
-# custom retriever
-# ────────────────────────────────────────────────────────────────
-class DateRangeQdrantRetriever(BaseRetriever):
-    """Qdrant-lite retriever with optional date window & de-duplication."""
+# ──────────────────────── Retriever class ───────────────────────────
+class SmartQdrantRetriever(BaseRetriever):
+    """
+    1. semantic search with recency filter  (if *effective_date* exists)
+    2. semantic search all-time
+    3. keyword fallback (MatchText)  ➜  re-rank with cosine similarity
+    """
 
-    vs: QdrantVectorStore
-    k: int
-    start_iso: Optional[str] = None
-    end_iso: Optional[str] = None
-    dedupe: bool = True
+    vs:           QdrantVectorStore
+    payload_keys: set[str]
+    k:            int
+    start_ts:     Optional[int] = None
+    end_ts:       Optional[int] = None
+    dedupe:       bool          = True
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = {"arbitrary_types_allowed": True}
 
-    # ------------------------------------------------------------------
-    def _metadata_filter(self) -> Optional[qdj.Filter]:
-        if not (self.start_iso or self.end_iso):
+    # ───────────── helper: date filter ─────────────
+    def _date_filter(self) -> qdj.Filter | None:
+        if "effective_date" not in self.payload_keys:
+            return None
+        if self.start_ts is None and self.end_ts is None:
             return None
 
+        def ts2iso(ts: int) -> str:
+            return datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
+
         conds: list[qdj.FieldCondition] = []
-        if self.start_iso:
-            conds.append(
-                qdj.FieldCondition(
-                    key="effective_date",
-                    range=qdj.Range(gte=self.start_iso),
-                )
-            )
-        if self.end_iso:
-            conds.append(
-                qdj.FieldCondition(
-                    key="effective_date",
-                    range=qdj.Range(lte=self.end_iso),
-                )
-            )
+        if self.start_ts is not None:
+            conds.append(qdj.FieldCondition(
+                key="effective_date",
+                range=qdj.Range(gte=ts2iso(self.start_ts))
+            ))
+        if self.end_ts is not None:
+            conds.append(qdj.FieldCondition(
+                key="effective_date",
+                range=qdj.Range(lte=ts2iso(self.end_ts))
+            ))
         return qdj.Filter(must=conds)
 
-    # ------------------------------------------------------------------
-    def get_relevant_documents(self, query: str) -> List[Document]:
-        print(f"[Retriever] get_relevant_documents called with query: {query}", flush=True)
-        try:
-            print("[Retriever] Starting similarity search...", flush=True)
-            docs = self.vs.similarity_search(
-                query,
-                k=self.k * 3,               # over-fetch to allow later dedupe
-                filter=self._metadata_filter(),
+    # ───────────── helper: keyword filter ──────────
+    def _keyword_filter(self, query: str, content_key: str) -> qdj.Filter | None:
+        words = [w for w in query.lower().split() if len(w) >= 4]
+        if not words:
+            return None
+        return qdj.Filter(should=[
+            qdj.FieldCondition(
+                key   = content_key,
+                match = qdj.MatchText(value=w)
             )
-            print(f"[Retriever] Similarity search returned {len(docs)} docs", flush=True)
-        except Exception as e:
-            print(f"[Retriever][ERROR] Exception during similarity search: {e}", file=sys.stderr, flush=True)
-            raise
+            for w in words
+        ])
 
+    # ───────────── helper: de-duplication ──────────
+    def _dedupe(self, docs: List[Document]) -> List[Document]:
         if not self.dedupe:
-            print(f"[Retriever] Returning first {self.k} docs (no dedupe)", flush=True)
             return docs[: self.k]
 
-        seen, unique = set(), []
+        seen: Set[Tuple[int, int]] = set()
+        unique: List[Document]     = []
         for d in docs:
-            rid = d.metadata.get("raw_id")
-            if rid not in seen:
-                unique.append(d)
-                seen.add(rid)
+            key = (d.metadata.get("raw_id"), d.metadata.get("chunk_index"))
+            if key in seen:
+                continue
+            unique.append(d)
+            seen.add(key)
             if len(unique) == self.k:
                 break
-        print(f"[Retriever] Returning {len(unique)} unique docs after dedupe", flush=True)
         return unique
 
+    # ────────────── core retrieval logic ───────────
+    def _get_relevant_documents(self, query: str) -> List[Document]:
+        # which payload field holds the text?
+        content_key = "page_content" if "page_content" in self.payload_keys else "text"
 
-# ────────────────────────────────────────────────────────────────
-# public factory
-# ────────────────────────────────────────────────────────────────
+        # 1️⃣  recency-window semantic search
+        docs = self.vs.similarity_search(
+            query,
+            k=self.k * 3,
+            filter=self._date_filter(),
+        )
+        _d(f"phase-1 recency → {len(docs)} hits")
+
+        # 2️⃣  all-time semantic search
+        if not docs:
+            docs = self.vs.similarity_search(query, k=self.k * 3)
+            _d(f"phase-2 all-time → {len(docs)} hits")
+
+        # 3️⃣  keyword fallback + rerank
+        if not docs:
+            kw_filter = self._keyword_filter(query, content_key)
+            if kw_filter:
+                pts, _ = self.vs.client.scroll(
+                    self.vs.collection_name,
+                    with_payload=True,
+                    filter=kw_filter,
+                    limit=400,
+                )
+                if pts:
+                    texts = [p.payload.get(content_key, "") for p in pts]
+                    emb   = self.vs.embedding_function
+                    q_vec = emb.embed_query(query)
+                    d_vec = emb.embed_documents(texts)
+
+                    def score(v):  # dot-product (same as cosine on normed vecs)
+                        return sum(a * b for a, b in zip(v, q_vec))
+
+                    ranked = sorted(
+                        zip(pts, texts, d_vec),
+                        key=lambda t: score(t[2]),
+                        reverse=True,
+                    )[: self.k * 3]
+
+                    docs = [
+                        Document(page_content=txt, metadata=pt.payload)
+                        for pt, txt, _ in ranked
+                    ]
+                _d(f"phase-3 keyword → {len(docs)} hits")
+
+        return self._dedupe(docs)
+
+
+# ────────────────────────── factory API ────────────────────────────
 def get_retriever(
     niche: str,
     country: str,
     *,
     k: int = 8,
     recency_days: int | None = 365,
-    start_date: str | None = None,
-    end_date: str | None = None,
+    start_date: str | None   = None,
+    end_date:   str | None   = None,
     dedupe: bool = True,
 ) -> BaseRetriever:
     """
-    Return a ready-to-use retriever.
-
-    Parameters
-    ----------
-    niche, country   : collection identifiers
-    k                : number of final chunks to return
-    recency_days     : if >0 and *start_date* not given,
-                       limit to the last N days
-    start_date / end_date
-                     : ISO-8601 YYYY-MM-DD strings; override recency_days
-    dedupe           : drop duplicate raw_documents
+    Return a ready SmartQdrantRetriever.  Call its `.invoke(query)` or
+    `.get_relevant_documents(query)`.
     """
-    print(f"[Factory] get_retriever called with niche={niche}, country={country}, k={k}, recency_days={recency_days}, start_date={start_date}, end_date={end_date}, dedupe={dedupe}", flush=True)
-    print("[Factory] Loading Qdrant collection...", flush=True)
-    vs = _load_qdrant(niche, country)
-    print("[Factory] Qdrant loaded.", flush=True)
+    start_ts = _iso_to_ts(start_date) if start_date else None
+    end_ts   = _iso_to_ts(end_date)   if end_date   else None
 
-    # work out lower bound for effective_date
-    start_iso = start_date
-    if not start_iso and recency_days and recency_days > 0:
-        start_iso = (date.today() - timedelta(days=recency_days)).isoformat()
-    print(f"[Factory] Using start_iso={start_iso}, end_iso={end_date}", flush=True)
+    # default recency window unless explicit dates were provided
+    if start_ts is None and recency_days is not None:
+        start_ts = int((datetime.now(timezone.utc) - timedelta(days=recency_days)).timestamp())
 
-    return DateRangeQdrantRetriever(
-        vs=vs,
-        k=k,
-        start_iso=start_iso,
-        end_iso=end_date,
-        dedupe=dedupe,
+    vs, keys = _load_qdrant(niche, country)
+
+    return SmartQdrantRetriever(
+        vs           = vs,
+        payload_keys = keys,
+        k            = k,
+        start_ts     = start_ts,
+        end_ts       = end_ts,
+        dedupe       = dedupe,
     )
