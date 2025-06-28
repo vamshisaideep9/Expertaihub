@@ -301,6 +301,12 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
+        # Logger for OpenAI vector store builds
+        "ai_core.management.commands.build_vector_store_openai": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
         # Logger for ml.py
         "expertaihub_backend.immigration.usa.ml": {
             "handlers": ["console"],
