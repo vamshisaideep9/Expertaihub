@@ -1,3 +1,5 @@
+# nodes/cfg.py
+
 from ai_core.config.loader import niche_cfg
 
 TIER_MAX_DOCS = {"free": 8, "plus": 12, "pro+": 24}

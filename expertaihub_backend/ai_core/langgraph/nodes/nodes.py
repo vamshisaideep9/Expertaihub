@@ -1,3 +1,5 @@
+#nodes/nodes.py
+
 import logging
 from types import GeneratorType
 from typing import Any, Dict, List
@@ -7,7 +9,7 @@ from dateparser.search import search_dates
 
 from ai_core.llm.llm_client_free import ask_openai, client, DEFAULT_REASONING_EFFORT
 from ai_core.rag.retriever_free import get_retriever
-from ai_core.rag.retriever_openai import get_retriever_openai
+from ai_core.rag.retriever_plus import get_retriever_openai
 from ai_core.prompts.prompts import (
     rephrase_prompt,
     intent_prompt,
@@ -247,12 +249,14 @@ def retrieve_context(state: Dict[str, Any]) -> Dict[str, Any]:
     niche = state.get("niche", "immigration")
     country = state.get("country", "usa")
     if index:
-        parts = index.split("_", 1)
-        if len(parts) == 2:
-            niche, country = parts[0], parts[1]
-        else:
-            niche = index
-    k = 15
+        pieces = index.split("_")
+    # 2) drop tier suffix if present
+        if pieces[-1] in {"plus", "proplus"}:
+            pieces = pieces[:-1]                # strip suffix
+    # 3) expect <niche>_<country>
+        if len(pieces) >= 2:
+            niche, country = pieces[0], "_".join(pieces[1:])
+    k = int(state.get("max_docs", 8))
     recency_days = state.get("recency_days", None)  # None → no cutoff
     start_date = state.get("start_date", None)   # ISO str or None
     end_date = state.get("end_date", None)     # ISO str or None

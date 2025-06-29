@@ -1,4 +1,4 @@
-# ai_core/langgraph/graphs.py
+# ai_core/langgraph/workflows/workflows_free.py
 
 from typing import Optional, List, TypedDict, Literal
 from langgraph.graph import StateGraph
@@ -101,7 +101,7 @@ def get_immigration_graph():
             "ask_form_info":   "retrieve_context",
             "state_law_query": "retrieve_context",
             "followup":        "retrieve_context",
-            "not_in_docs":     "deny_answer_confidently",
+            "not_in_docs":     "retrieve_context",
         }
     )
 
