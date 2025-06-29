@@ -285,7 +285,12 @@ def retrieve_context(state: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     # 3) Fetch the top-k chunks
-    docs = retriever.invoke(query)
+    try:
+        docs = retriever.invoke(query)
+    except Exception as e:
+        logger.error(f"[retrieve_context] retrieval error: {e}")
+        state["docs"] = []
+        return state
 
     # 4) Strip out empty text
     state['docs'] = [d.page_content.strip() for d in docs if d.page_content.strip()]

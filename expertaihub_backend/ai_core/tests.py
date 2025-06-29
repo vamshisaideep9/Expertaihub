@@ -9,6 +9,7 @@ from pathlib import Path
 from django.urls import reverse
 from django.test import TestCase
 from rest_framework.test import APIClient
+from unittest.mock import Mock, patch
 
 from . import views
 
@@ -47,3 +48,17 @@ class DocumentDetailViewTests(TestCase):
         )
         resp = self.client.get(url)
         self.assertEqual(resp.status_code, 400)
+
+
+class RetrieveContextErrorTests(TestCase):
+    def test_retriever_exception_sets_empty_docs(self):
+        from ai_core.langgraph.nodes import nodes as node_module
+        state = {"question": "hi", "session_id": "s1"}
+
+        mock_retriever = Mock()
+        mock_retriever.invoke.side_effect = Exception("boom")
+
+        with patch.object(node_module, "get_retriever", return_value=mock_retriever):
+            result = node_module.retrieve_context(state)
+
+        self.assertEqual(result["docs"], [])
